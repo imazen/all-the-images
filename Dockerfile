@@ -34,21 +34,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
-# Stage: libjpeg-classic — IJG libjpeg v9e
+# Stage: libjpeg-classic — IJG libjpeg v9e + v10
 #
-# v9e is the latest IJG release (2022-01-16). Supports arithmetic coding,
-# block sizes 1-16 (-block N), RGB identity encoding (-rgb1), and big gamut
-# YCC (-bgycc) — features no other implementation has.
+# IJG libjpeg is the original reference implementation. v9+ supports
+# arithmetic coding, block sizes 1-16 (-block N), RGB identity encoding
+# (-rgb1), and big gamut YCC (-bgycc) — features no other implementation has.
+#
+# We build both v9e (in Ubuntu 24.04, most current deployments) and v10
+# (released 2026-01-25, not in any Ubuntu yet) to catch compatibility
+# differences between the two.
+#
+# Ubuntu libjpeg history:
+#   14.04 Trusty:  turbo 1.3.0, IJG 6b
+#   16.04 Xenial:  turbo 1.4.2, IJG 9b
+#   18.04 Bionic:  turbo 1.5.2, IJG 9b
+#   20.04 Focal:   turbo 2.0.3, IJG 9d
+#   22.04 Jammy:   turbo 2.1.2, IJG 9d
+#   24.04 Noble:   turbo 2.1.5, IJG 9e
+#   25.04 Plucky:  turbo 2.1.5, IJG 9f
+#   v10 released 2026-01-25 — not yet in any Ubuntu
 # ============================================================================
 FROM base AS libjpeg-classic
 
-ARG LIBJPEG_VERSION=9e
-RUN curl -fsSL "https://www.ijg.org/files/jpegsrc.v${LIBJPEG_VERSION}.tar.gz" \
-        | tar xz -C /tmp \
-    && cd /tmp/jpeg-${LIBJPEG_VERSION} \
-    && ./configure --prefix=/opt/libjpeg-${LIBJPEG_VERSION} \
-    && make -j"$(nproc)" \
-    && make install
+# Build v9e (current Ubuntu LTS) and v10 (latest) side by side
+RUN for v in 9e 10; do \
+        curl -fsSL "https://www.ijg.org/files/jpegsrc.v${v}.tar.gz" \
+            | tar xz -C /tmp \
+        && cd /tmp/jpeg-${v} \
+        && ./configure --prefix=/opt/libjpeg-${v} \
+        && make -j"$(nproc)" \
+        && make install \
+        && make clean \
+        && cd /; \
+    done
 
 # ============================================================================
 # Stage: libjpeg-turbo — 8-bit with arithmetic coding enabled
@@ -358,6 +376,7 @@ RUN pip3 install --no-cache-dir --break-system-packages blake3==1.0.4
 
 # ── JPEG encoders ──
 COPY --from=libjpeg-classic     /opt/libjpeg-9e                    /opt/libjpeg-9e
+COPY --from=libjpeg-classic     /opt/libjpeg-10                    /opt/libjpeg-10
 COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-3.1.0           /opt/libjpeg-turbo-3.1.0
 COPY --from=libjpeg-turbo-12bit /opt/libjpeg-turbo-3.1.0-12bit     /opt/libjpeg-turbo-3.1.0-12bit
 COPY --from=mozjpeg             /opt/mozjpeg-4.1.5                  /opt/mozjpeg-4.1.5
@@ -391,8 +410,10 @@ COPY --from=libheif             /usr/local/lib/libx265*              /usr/local/
 ENV LD_LIBRARY_PATH="/opt/jpegli-0.11.1/lib:/opt/libjpeg-turbo-3.1.0/lib:/opt/mozjpeg-4.1.5/lib64:/opt/mozjpeg-4.1.5/lib:/opt/libwebp-1.5.0/lib:/opt/libavif-1.2.1/lib:/opt/libtiff-4.7.0/lib:/opt/libheif-1.19.7/lib:/usr/local/lib"
 
 # ── JPEG encoder aliases ──
-ENV CJPEG_IJG="/opt/libjpeg-9e/bin/cjpeg" \
-    DJPEG_IJG="/opt/libjpeg-9e/bin/djpeg" \
+ENV CJPEG_IJG9="/opt/libjpeg-9e/bin/cjpeg" \
+    DJPEG_IJG9="/opt/libjpeg-9e/bin/djpeg" \
+    CJPEG_IJG10="/opt/libjpeg-10/bin/cjpeg" \
+    DJPEG_IJG10="/opt/libjpeg-10/bin/djpeg" \
     CJPEG_TURBO="/opt/libjpeg-turbo-3.1.0/bin/cjpeg" \
     DJPEG_TURBO="/opt/libjpeg-turbo-3.1.0/bin/djpeg" \
     CJPEG_TURBO_12BIT="/opt/libjpeg-turbo-3.1.0-12bit/bin/cjpeg" \

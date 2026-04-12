@@ -48,6 +48,13 @@ ENCODER_METADATA = {
         "source_url": "https://www.ijg.org/",
         "compile_flags": [],
     },
+    "libjpeg-10": {
+        "name": "libjpeg (IJG)",
+        "version": "10",
+        "binary": "cjpeg",
+        "source_url": "https://www.ijg.org/",
+        "compile_flags": [],
+    },
     "mozjpeg-4.1.5": {
         "name": "mozjpeg",
         "version": "4.1.5",

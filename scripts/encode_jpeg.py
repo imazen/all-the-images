@@ -147,19 +147,20 @@ def build_cjpeg_turbo_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     return tasks
 
 
-def build_cjpeg_ijg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """IJG libjpeg v9e parameter permutations.
+def _build_cjpeg_ijg_version_tasks(source: dict, quick: bool,
+                                    env_name: str, encoder_id: str,
+                                    lib_path: str) -> list[EncoderTask]:
+    """IJG libjpeg parameter permutations for a single version.
 
-    v9e supports block sizes 1-16, arithmetic coding natively, and
+    IJG v9+ supports block sizes 1-16, arithmetic coding natively, and
     RGB identity encoding — features unique to IJG libjpeg.
     """
-    binary = env_bin("CJPEG_IJG")
+    binary = env_bin(env_name)
     if not binary:
         return []
 
-    encoder_id = "libjpeg-9e"
     tasks = []
-    ijg_env = {"LD_LIBRARY_PATH": "/opt/libjpeg-9e/lib"}
+    ijg_env = {"LD_LIBRARY_PATH": lib_path}
     is_gray = source["channels"] == 1
 
     qualities = [10, 50, 85, 97] if not quick else [50, 85]
@@ -202,6 +203,18 @@ def build_cjpeg_ijg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
                         env_override=ijg_env,
                     ))
     return tasks
+
+
+def build_cjpeg_ijg9_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """IJG libjpeg v9e — current Ubuntu 24.04 LTS version."""
+    return _build_cjpeg_ijg_version_tasks(
+        source, quick, "CJPEG_IJG9", "libjpeg-9e", "/opt/libjpeg-9e/lib")
+
+
+def build_cjpeg_ijg10_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """IJG libjpeg v10 — released 2026-01-25, not yet in any Ubuntu."""
+    return _build_cjpeg_ijg_version_tasks(
+        source, quick, "CJPEG_IJG10", "libjpeg-10", "/opt/libjpeg-10/lib")
 
 
 def build_mozjpeg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
@@ -528,7 +541,8 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
 
 TASK_BUILDERS = [
     build_cjpeg_turbo_tasks,
-    build_cjpeg_ijg_tasks,
+    build_cjpeg_ijg9_tasks,
+    build_cjpeg_ijg10_tasks,
     build_mozjpeg_tasks,
     build_cjpegli_tasks,
     build_guetzli_tasks,
