@@ -34,24 +34,69 @@ except ImportError:
 # Each encode_*.py has an ENCODER_METADATA dict.
 ENCODER_METADATA = {
     # ── JPEG ──
+    # libjpeg-turbo versions (matching Ubuntu LTS history)
+    "libjpeg-turbo-1.3.0": {
+        "name": "libjpeg-turbo", "version": "1.3.0", "binary": "cjpeg",
+        "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+        "compile_flags": ["WITH_ARITH_ENC=1", "WITH_ARITH_DEC=1"],
+        "ubuntu": "14.04 Trusty",
+    },
+    "libjpeg-turbo-1.4.2": {
+        "name": "libjpeg-turbo", "version": "1.4.2", "binary": "cjpeg",
+        "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+        "compile_flags": ["WITH_ARITH_ENC=1", "WITH_ARITH_DEC=1"],
+        "ubuntu": "16.04 Xenial",
+    },
+    "libjpeg-turbo-1.5.2": {
+        "name": "libjpeg-turbo", "version": "1.5.2", "binary": "cjpeg",
+        "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+        "compile_flags": ["WITH_ARITH_ENC=1", "WITH_ARITH_DEC=1"],
+        "ubuntu": "18.04 Bionic",
+    },
+    "libjpeg-turbo-2.0.3": {
+        "name": "libjpeg-turbo", "version": "2.0.3", "binary": "cjpeg",
+        "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+        "compile_flags": ["WITH_ARITH_ENC=1", "WITH_ARITH_DEC=1"],
+        "ubuntu": "20.04 Focal",
+    },
+    "libjpeg-turbo-2.1.2": {
+        "name": "libjpeg-turbo", "version": "2.1.2", "binary": "cjpeg",
+        "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+        "compile_flags": ["WITH_ARITH_ENC=1", "WITH_ARITH_DEC=1"],
+        "ubuntu": "22.04 Jammy",
+    },
+    "libjpeg-turbo-2.1.5": {
+        "name": "libjpeg-turbo", "version": "2.1.5", "binary": "cjpeg",
+        "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+        "compile_flags": ["WITH_ARITH_ENC=1", "WITH_ARITH_DEC=1"],
+        "ubuntu": "24.04 Noble",
+    },
     "libjpeg-turbo-3.1.0": {
-        "name": "libjpeg-turbo",
-        "version": "3.1.0",
-        "binary": "cjpeg",
+        "name": "libjpeg-turbo", "version": "3.1.0", "binary": "cjpeg",
         "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
         "compile_flags": ["WITH_ARITH_ENC=1", "WITH_ARITH_DEC=1"],
     },
-    "libjpeg-9e": {
-        "name": "libjpeg (IJG)",
-        "version": "9e",
-        "binary": "cjpeg",
+    # IJG libjpeg versions (matching Ubuntu history + latest)
+    "libjpeg-6b": {
+        "name": "libjpeg (IJG)", "version": "6b", "binary": "cjpeg",
         "source_url": "https://www.ijg.org/",
         "compile_flags": [],
+        "ubuntu": "14.04 Trusty",
+    },
+    "libjpeg-9b": {
+        "name": "libjpeg (IJG)", "version": "9b", "binary": "cjpeg",
+        "source_url": "https://www.ijg.org/",
+        "compile_flags": [],
+        "ubuntu": "16.04 Xenial / 18.04 Bionic",
+    },
+    "libjpeg-9d": {
+        "name": "libjpeg (IJG)", "version": "9d", "binary": "cjpeg",
+        "source_url": "https://www.ijg.org/",
+        "compile_flags": [],
+        "ubuntu": "20.04 Focal / 22.04 Jammy",
     },
     "libjpeg-10": {
-        "name": "libjpeg (IJG)",
-        "version": "10",
-        "binary": "cjpeg",
+        "name": "libjpeg (IJG)", "version": "10", "binary": "cjpeg",
         "source_url": "https://www.ijg.org/",
         "compile_flags": [],
     },
@@ -196,7 +241,12 @@ def build_manifest(results_path: Path, sources_path: Path,
             "type": s["type"],
         }
 
-    # Collect successful results, dedup by output hash
+    # Collect successful results, dedup by output hash.
+    # When multiple encoder/param combos produce byte-identical output,
+    # we store the file once but record ALL producers in "also_produced_by".
+    # This is the primary value of running multiple encoder versions —
+    # downstream can see "turbo 2.0.3 and 2.1.2 produce identical output
+    # for this source+params, but 1.5.2 differs by 3 bytes".
     seen_hashes = {}  # hash -> file entry
     files = []
     encoders_used = set()
@@ -213,7 +263,15 @@ def build_manifest(results_path: Path, sources_path: Path,
 
         h = r["output_hash"]
         if h in seen_hashes:
-            # Already have this file — just note the duplicate params
+            # Same content — record this encoder+params as a co-producer
+            entry = seen_hashes[h]
+            if "also_produced_by" not in entry:
+                entry["also_produced_by"] = []
+            entry["also_produced_by"].append({
+                "encoder": r["encoder_id"],
+                "source": r["source_name"],
+                "params": r["params"],
+            })
             continue
 
         # Compute BLAKE3 of the actual file
@@ -254,9 +312,11 @@ def build_manifest(results_path: Path, sources_path: Path,
     }
 
     total_bytes = sum(f["bytes"] for f in files)
+    files_with_dupes = sum(1 for f in files if "also_produced_by" in f)
+    total_coprod = sum(len(f.get("also_produced_by", [])) for f in files)
 
     manifest = {
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "encoders": encoders,
         "sources": sources_meta,
@@ -268,6 +328,8 @@ def build_manifest(results_path: Path, sources_path: Path,
             "encoders_used": len(encoders_used),
             "sources_used": len(sources_used),
             "encoding_failures": failures,
+            "files_with_coproducers": files_with_dupes,
+            "total_coproductions": total_coprod,
         },
     }
 

@@ -56,11 +56,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ============================================================================
 FROM base AS libjpeg-classic
 
-# Build v9e (current Ubuntu LTS) and v10 (latest) side by side
-RUN for v in 9e 10; do \
+# Build IJG versions that were actually shipped in Ubuntu:
+#   6b  — Ubuntu 14.04 (the ancient baseline, still widely deployed)
+#   9b  — Ubuntu 16.04/18.04 (first v9 in Ubuntu)
+#   9d  — Ubuntu 20.04/22.04
+#   10  — released 2026-01-25, not yet in any Ubuntu
+# Skipping 9e/9f (incremental between 9d and 10, less interesting).
+RUN for v in 6b 9b 9d 10; do \
         curl -fsSL "https://www.ijg.org/files/jpegsrc.v${v}.tar.gz" \
             | tar xz -C /tmp \
-        && cd /tmp/jpeg-${v} \
+        && cd /tmp/jpeg-${v}* \
         && ./configure --prefix=/opt/libjpeg-${v} \
         && make -j"$(nproc)" \
         && make install \
@@ -69,29 +74,53 @@ RUN for v in 9e 10; do \
     done
 
 # ============================================================================
-# Stage: libjpeg-turbo — 8-bit with arithmetic coding enabled
+# Stage: libjpeg-turbo — multiple versions matching Ubuntu history
 #
-# Distro packages disable WITH_ARITH_ENC/DEC by default. We build from
-# source to enable arithmetic-coded output.
+# Every Ubuntu LTS since 14.04 shipped a different turbo version. We build
+# all of them with arithmetic coding enabled (distro packages disable it).
+# Dedup in the manifest shows which versions produce identical output.
+#
+#   1.3.0 — Ubuntu 14.04 Trusty
+#   1.4.2 — Ubuntu 16.04 Xenial
+#   1.5.2 — Ubuntu 18.04 Bionic
+#   2.0.3 — Ubuntu 20.04 Focal
+#   2.1.2 — Ubuntu 22.04 Jammy
+#   2.1.5 — Ubuntu 24.04 Noble / 25.04 Plucky
+#   3.1.0 — latest upstream
 # ============================================================================
 FROM base AS libjpeg-turbo
 
-ARG TURBO_VERSION=3.1.0
-ARG TURBO_COMMIT=3.1.0
-RUN git clone --depth 1 --branch ${TURBO_COMMIT} \
-        https://github.com/libjpeg-turbo/libjpeg-turbo.git /tmp/libjpeg-turbo \
-    && cd /tmp/libjpeg-turbo \
-    && cmake -B build -G Ninja \
-        -DCMAKE_INSTALL_PREFIX=/opt/libjpeg-turbo-${TURBO_VERSION} \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DWITH_ARITH_ENC=1 \
-        -DWITH_ARITH_DEC=1 \
-        -DWITH_TURBOJPEG=0 \
-    && cmake --build build -j"$(nproc)" \
-    && cmake --install build
+# Build each version into its own prefix.
+# Note: 1.3.0 uses autotools, not cmake. 1.4.2+ use cmake.
+# v1.3.0 (autotools)
+RUN git clone --depth 1 --branch 1.3.0 \
+        https://github.com/libjpeg-turbo/libjpeg-turbo.git /tmp/turbo-1.3.0 \
+    && cd /tmp/turbo-1.3.0 \
+    && autoreconf -fiv \
+    && ./configure --prefix=/opt/libjpeg-turbo-1.3.0 \
+        --with-arith-enc --with-arith-dec \
+    && make -j"$(nproc)" \
+    && make install
+
+# v1.4.2+ (cmake)
+RUN for tag in 1.4.2 1.5.2 2.0.3 2.1.2 2.1.5 3.1.0; do \
+        git clone --depth 1 --branch ${tag} \
+            https://github.com/libjpeg-turbo/libjpeg-turbo.git /tmp/turbo-${tag} \
+        && cd /tmp/turbo-${tag} \
+        && cmake -B build -G Ninja \
+            -DCMAKE_INSTALL_PREFIX=/opt/libjpeg-turbo-${tag} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_ARITH_ENC=1 \
+            -DWITH_ARITH_DEC=1 \
+            -DWITH_TURBOJPEG=0 \
+        && cmake --build build -j"$(nproc)" \
+        && cmake --install build \
+        && rm -rf /tmp/turbo-${tag} \
+        && cd /; \
+    done
 
 # ============================================================================
-# Stage: libjpeg-turbo-12bit — separate 12-bit precision build
+# Stage: libjpeg-turbo-12bit — separate 12-bit precision build (latest only)
 #
 # 12-bit mode is a compile-time switch that changes the entire library.
 # Can't have 8-bit and 12-bit in the same binary.
@@ -99,8 +128,7 @@ RUN git clone --depth 1 --branch ${TURBO_COMMIT} \
 FROM base AS libjpeg-turbo-12bit
 
 ARG TURBO_VERSION=3.1.0
-ARG TURBO_COMMIT=3.1.0
-RUN git clone --depth 1 --branch ${TURBO_COMMIT} \
+RUN git clone --depth 1 --branch ${TURBO_VERSION} \
         https://github.com/libjpeg-turbo/libjpeg-turbo.git /tmp/libjpeg-turbo \
     && cd /tmp/libjpeg-turbo \
     && cmake -B build -G Ninja \
@@ -374,9 +402,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # blake3 for content hashing
 RUN pip3 install --no-cache-dir --break-system-packages blake3==1.0.4
 
-# ── JPEG encoders ──
-COPY --from=libjpeg-classic     /opt/libjpeg-9e                    /opt/libjpeg-9e
+# ── IJG libjpeg versions ──
+COPY --from=libjpeg-classic     /opt/libjpeg-6b                    /opt/libjpeg-6b
+COPY --from=libjpeg-classic     /opt/libjpeg-9b                    /opt/libjpeg-9b
+COPY --from=libjpeg-classic     /opt/libjpeg-9d                    /opt/libjpeg-9d
 COPY --from=libjpeg-classic     /opt/libjpeg-10                    /opt/libjpeg-10
+
+# ── libjpeg-turbo versions (matching Ubuntu LTS history) ──
+COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-1.3.0           /opt/libjpeg-turbo-1.3.0
+COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-1.4.2           /opt/libjpeg-turbo-1.4.2
+COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-1.5.2           /opt/libjpeg-turbo-1.5.2
+COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-2.0.3           /opt/libjpeg-turbo-2.0.3
+COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-2.1.2           /opt/libjpeg-turbo-2.1.2
+COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-2.1.5           /opt/libjpeg-turbo-2.1.5
 COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-3.1.0           /opt/libjpeg-turbo-3.1.0
 COPY --from=libjpeg-turbo-12bit /opt/libjpeg-turbo-3.1.0-12bit     /opt/libjpeg-turbo-3.1.0-12bit
 COPY --from=mozjpeg             /opt/mozjpeg-4.1.5                  /opt/mozjpeg-4.1.5
@@ -409,16 +447,30 @@ COPY --from=libheif             /usr/local/lib/libx265*              /usr/local/
 # Library paths for dynamically linked binaries
 ENV LD_LIBRARY_PATH="/opt/jpegli-0.11.1/lib:/opt/libjpeg-turbo-3.1.0/lib:/opt/mozjpeg-4.1.5/lib64:/opt/mozjpeg-4.1.5/lib:/opt/libwebp-1.5.0/lib:/opt/libavif-1.2.1/lib:/opt/libtiff-4.7.0/lib:/opt/libheif-1.19.7/lib:/usr/local/lib"
 
-# ── JPEG encoder aliases ──
-ENV CJPEG_IJG9="/opt/libjpeg-9e/bin/cjpeg" \
-    DJPEG_IJG9="/opt/libjpeg-9e/bin/djpeg" \
+# ── IJG libjpeg aliases ──
+ENV CJPEG_IJG6B="/opt/libjpeg-6b/bin/cjpeg" \
+    DJPEG_IJG6B="/opt/libjpeg-6b/bin/djpeg" \
+    CJPEG_IJG9B="/opt/libjpeg-9b/bin/cjpeg" \
+    DJPEG_IJG9B="/opt/libjpeg-9b/bin/djpeg" \
+    CJPEG_IJG9D="/opt/libjpeg-9d/bin/cjpeg" \
+    DJPEG_IJG9D="/opt/libjpeg-9d/bin/djpeg" \
     CJPEG_IJG10="/opt/libjpeg-10/bin/cjpeg" \
-    DJPEG_IJG10="/opt/libjpeg-10/bin/djpeg" \
+    DJPEG_IJG10="/opt/libjpeg-10/bin/djpeg"
+
+# ── libjpeg-turbo aliases (one per Ubuntu LTS version) ──
+ENV CJPEG_TURBO_1_3="/opt/libjpeg-turbo-1.3.0/bin/cjpeg" \
+    CJPEG_TURBO_1_4="/opt/libjpeg-turbo-1.4.2/bin/cjpeg" \
+    CJPEG_TURBO_1_5="/opt/libjpeg-turbo-1.5.2/bin/cjpeg" \
+    CJPEG_TURBO_2_0="/opt/libjpeg-turbo-2.0.3/bin/cjpeg" \
+    CJPEG_TURBO_2_1_2="/opt/libjpeg-turbo-2.1.2/bin/cjpeg" \
+    CJPEG_TURBO_2_1_5="/opt/libjpeg-turbo-2.1.5/bin/cjpeg" \
     CJPEG_TURBO="/opt/libjpeg-turbo-3.1.0/bin/cjpeg" \
     DJPEG_TURBO="/opt/libjpeg-turbo-3.1.0/bin/djpeg" \
     CJPEG_TURBO_12BIT="/opt/libjpeg-turbo-3.1.0-12bit/bin/cjpeg" \
-    DJPEG_TURBO_12BIT="/opt/libjpeg-turbo-3.1.0-12bit/bin/djpeg" \
-    CJPEG_MOZ="/opt/mozjpeg-4.1.5/bin/cjpeg" \
+    DJPEG_TURBO_12BIT="/opt/libjpeg-turbo-3.1.0-12bit/bin/djpeg"
+
+# ── Other JPEG encoder aliases ──
+ENV CJPEG_MOZ="/opt/mozjpeg-4.1.5/bin/cjpeg" \
     DJPEG_MOZ="/opt/mozjpeg-4.1.5/bin/djpeg" \
     CJPEGLI="/opt/jpegli-0.11.1/bin/cjpegli" \
     DJPEGLI="/opt/jpegli-0.11.1/bin/djpegli" \

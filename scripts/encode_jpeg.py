@@ -69,15 +69,16 @@ def env_bin(name: str) -> str:
     return path
 
 
-def build_cjpeg_turbo_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """libjpeg-turbo cjpeg parameter permutations."""
-    binary = env_bin("CJPEG_TURBO")
+def _build_cjpeg_turbo_version_tasks(source: dict, quick: bool,
+                                      env_name: str, encoder_id: str,
+                                      lib_path: str) -> list[EncoderTask]:
+    """libjpeg-turbo cjpeg parameter permutations for a single version."""
+    binary = env_bin(env_name)
     if not binary:
         return []
 
-    encoder_id = "libjpeg-turbo-3.1.0"
     tasks = []
-    turbo_env = {"LD_LIBRARY_PATH": "/opt/libjpeg-turbo-3.1.0/lib"}
+    turbo_env = {"LD_LIBRARY_PATH": lib_path}
 
     qualities = [1, 5, 15, 35, 55, 75, 85, 92, 97, 100] if not quick else [15, 75, 97]
     subsampling_rgb = ["1x1", "2x1", "1x2", "2x2", "4x1"] if not quick else ["1x1", "2x2"]
@@ -147,13 +148,65 @@ def build_cjpeg_turbo_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     return tasks
 
 
+def build_cjpeg_turbo_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """libjpeg-turbo 3.1.0 — latest upstream."""
+    return _build_cjpeg_turbo_version_tasks(
+        source, quick, "CJPEG_TURBO", "libjpeg-turbo-3.1.0",
+        "/opt/libjpeg-turbo-3.1.0/lib")
+
+
+def build_cjpeg_turbo_1_3_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """libjpeg-turbo 1.3.0 — Ubuntu 14.04 Trusty."""
+    return _build_cjpeg_turbo_version_tasks(
+        source, quick, "CJPEG_TURBO_1_3", "libjpeg-turbo-1.3.0",
+        "/opt/libjpeg-turbo-1.3.0/lib")
+
+
+def build_cjpeg_turbo_1_4_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """libjpeg-turbo 1.4.2 — Ubuntu 16.04 Xenial."""
+    return _build_cjpeg_turbo_version_tasks(
+        source, quick, "CJPEG_TURBO_1_4", "libjpeg-turbo-1.4.2",
+        "/opt/libjpeg-turbo-1.4.2/lib")
+
+
+def build_cjpeg_turbo_1_5_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """libjpeg-turbo 1.5.2 — Ubuntu 18.04 Bionic."""
+    return _build_cjpeg_turbo_version_tasks(
+        source, quick, "CJPEG_TURBO_1_5", "libjpeg-turbo-1.5.2",
+        "/opt/libjpeg-turbo-1.5.2/lib")
+
+
+def build_cjpeg_turbo_2_0_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """libjpeg-turbo 2.0.3 — Ubuntu 20.04 Focal."""
+    return _build_cjpeg_turbo_version_tasks(
+        source, quick, "CJPEG_TURBO_2_0", "libjpeg-turbo-2.0.3",
+        "/opt/libjpeg-turbo-2.0.3/lib")
+
+
+def build_cjpeg_turbo_2_1_2_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """libjpeg-turbo 2.1.2 — Ubuntu 22.04 Jammy."""
+    return _build_cjpeg_turbo_version_tasks(
+        source, quick, "CJPEG_TURBO_2_1_2", "libjpeg-turbo-2.1.2",
+        "/opt/libjpeg-turbo-2.1.2/lib")
+
+
+def build_cjpeg_turbo_2_1_5_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """libjpeg-turbo 2.1.5 — Ubuntu 24.04 Noble."""
+    return _build_cjpeg_turbo_version_tasks(
+        source, quick, "CJPEG_TURBO_2_1_5", "libjpeg-turbo-2.1.5",
+        "/opt/libjpeg-turbo-2.1.5/lib")
+
+
 def _build_cjpeg_ijg_version_tasks(source: dict, quick: bool,
                                     env_name: str, encoder_id: str,
-                                    lib_path: str) -> list[EncoderTask]:
+                                    lib_path: str,
+                                    has_block_sizes: bool = True,
+                                    has_arithmetic: bool = True,
+                                    ) -> list[EncoderTask]:
     """IJG libjpeg parameter permutations for a single version.
 
-    IJG v9+ supports block sizes 1-16, arithmetic coding natively, and
-    RGB identity encoding — features unique to IJG libjpeg.
+    v6b: no arithmetic, no block sizes, no progressive in cjpeg
+    v9+: arithmetic coding, block sizes 1-16, RGB identity encoding
     """
     binary = env_bin(env_name)
     if not binary:
@@ -164,8 +217,8 @@ def _build_cjpeg_ijg_version_tasks(source: dict, quick: bool,
     is_gray = source["channels"] == 1
 
     qualities = [10, 50, 85, 97] if not quick else [50, 85]
-    blocks = [8, 1, 16] if not quick else [8]
-    arithmetics = [False, True] if not quick else [False]
+    blocks = ([8, 1, 16] if has_block_sizes else [8]) if not quick else [8]
+    arithmetics = ([False, True] if has_arithmetic else [False]) if not quick else [False]
     progressives = [False, True] if not quick else [False]
 
     for q in qualities:
@@ -205,10 +258,23 @@ def _build_cjpeg_ijg_version_tasks(source: dict, quick: bool,
     return tasks
 
 
-def build_cjpeg_ijg9_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """IJG libjpeg v9e — current Ubuntu 24.04 LTS version."""
+def build_cjpeg_ijg6b_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """IJG libjpeg v6b — Ubuntu 14.04, the ancient baseline."""
     return _build_cjpeg_ijg_version_tasks(
-        source, quick, "CJPEG_IJG9", "libjpeg-9e", "/opt/libjpeg-9e/lib")
+        source, quick, "CJPEG_IJG6B", "libjpeg-6b", "/opt/libjpeg-6b/lib",
+        has_block_sizes=False, has_arithmetic=False)
+
+
+def build_cjpeg_ijg9b_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """IJG libjpeg v9b — Ubuntu 16.04/18.04."""
+    return _build_cjpeg_ijg_version_tasks(
+        source, quick, "CJPEG_IJG9B", "libjpeg-9b", "/opt/libjpeg-9b/lib")
+
+
+def build_cjpeg_ijg9d_tasks(source: dict, quick: bool) -> list[EncoderTask]:
+    """IJG libjpeg v9d — Ubuntu 20.04/22.04."""
+    return _build_cjpeg_ijg_version_tasks(
+        source, quick, "CJPEG_IJG9D", "libjpeg-9d", "/opt/libjpeg-9d/lib")
 
 
 def build_cjpeg_ijg10_tasks(source: dict, quick: bool) -> list[EncoderTask]:
@@ -540,9 +606,20 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
 # ── Orchestration ──────────────────────────────────────────────────────────
 
 TASK_BUILDERS = [
-    build_cjpeg_turbo_tasks,
-    build_cjpeg_ijg9_tasks,
-    build_cjpeg_ijg10_tasks,
+    # libjpeg-turbo versions (Ubuntu LTS history + latest)
+    build_cjpeg_turbo_1_3_tasks,   # Ubuntu 14.04
+    build_cjpeg_turbo_1_4_tasks,   # Ubuntu 16.04
+    build_cjpeg_turbo_1_5_tasks,   # Ubuntu 18.04
+    build_cjpeg_turbo_2_0_tasks,   # Ubuntu 20.04
+    build_cjpeg_turbo_2_1_2_tasks, # Ubuntu 22.04
+    build_cjpeg_turbo_2_1_5_tasks, # Ubuntu 24.04
+    build_cjpeg_turbo_tasks,       # 3.1.0 (latest)
+    # IJG libjpeg versions
+    build_cjpeg_ijg6b_tasks,       # Ubuntu 14.04
+    build_cjpeg_ijg9b_tasks,       # Ubuntu 16.04/18.04
+    build_cjpeg_ijg9d_tasks,       # Ubuntu 20.04/22.04
+    build_cjpeg_ijg10_tasks,       # latest (2026-01-25)
+    # Other JPEG encoders
     build_mozjpeg_tasks,
     build_cjpegli_tasks,
     build_guetzli_tasks,
