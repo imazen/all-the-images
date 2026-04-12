@@ -29,17 +29,26 @@ python3 scripts/generate.py --output /tmp/corpus --quick --skip-reference
 scripts/generate.py          # Orchestrator (Docker ENTRYPOINT)
   ├── generate_sources.py    # Synthetic source images (PPM/PGM)
   ├── encode_jpeg.py         # JPEG encoding permutations
+  ├── encode_png.py          # PNG encoding/optimization permutations
+  ├── encode_webp.py         # WebP lossy + lossless permutations
+  ├── encode_avif.py         # AVIF encoding permutations
+  ├── encode_jxl.py          # JPEG XL VarDCT + modular permutations
+  ├── encode_gif.py          # GIF encoding/optimization permutations
+  ├── encode_tiff.py         # TIFF compressions + HEIC encoding
   ├── build_manifest.py      # Manifest assembly
   └── compute_reference.py   # Reference decoder pixel hashes
 ```
 
-Pipeline: sources → encode → manifest → reference hashes → final manifest.json
+Pipeline: sources → encode (all formats) → manifest → reference hashes → manifest.json
+
+Selective: `--formats jpeg,png,webp` to generate only specific formats.
 
 ## Encoders
 
 All encoders are compiled from pinned source inside Docker stages.
 Environment variables hold fully-qualified paths to avoid $PATH conflicts:
 
+### JPEG
 | Env var | Encoder | Version |
 |---------|---------|---------|
 | CJPEG_IJG | libjpeg (IJG) | 9e |
@@ -49,12 +58,52 @@ Environment variables hold fully-qualified paths to avoid $PATH conflicts:
 | CJPEGLI | jpegli | 0.11.1 (libjxl) |
 | GUETZLI | guetzli | 1.0.1 |
 
+### PNG
+| Env var | Encoder | Version |
+|---------|---------|---------|
+| OPTIPNG | OptiPNG | system (apt) |
+| PNGCRUSH | pngcrush | system (apt) |
+| ZOPFLIPNG | zopflipng | 1.0.3 |
+| (convert) | ImageMagick | system (apt) |
+
+### WebP
+| Env var | Encoder | Version |
+|---------|---------|---------|
+| CWEBP | cwebp (libwebp) | 1.5.0 |
+
+### AVIF
+| Env var | Encoder | Version |
+|---------|---------|---------|
+| AVIFENC | avifenc (libavif+aom) | 1.2.1 |
+
+### JPEG XL
+| Env var | Encoder | Version |
+|---------|---------|---------|
+| CJXL | cjxl (libjxl) | 0.11.1 |
+
+### GIF
+| Env var | Encoder | Version |
+|---------|---------|---------|
+| GIFSICLE | gifsicle | 1.95 |
+| (convert) | ImageMagick | system (apt) |
+
+### TIFF
+| Env var | Encoder | Version |
+|---------|---------|---------|
+| TIFFCP | tiffcp (libtiff) | 4.7.0 |
+| (convert) | ImageMagick | system (apt) |
+
+### HEIC
+| Env var | Encoder | Version |
+|---------|---------|---------|
+| HEIF_ENC | heif-enc (libheif+x265) | 1.19.7 |
+
 ## Adding a new encoder
 
 1. Add a build stage in `Dockerfile` (pin version via git tag)
 2. Add COPY + ENV in the runtime stage
-3. Add a `build_<encoder>_tasks()` function in `scripts/encode_jpeg.py`
-4. Add encoder metadata in `scripts/build_manifest.py`
+3. Add a `build_<encoder>_tasks()` function in the appropriate `scripts/encode_<format>.py`
+4. Add encoder metadata in `scripts/build_manifest.py` ENCODER_METADATA dict
 5. Rebuild: `docker compose build`
 
 ## Adding a new format
