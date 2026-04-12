@@ -162,20 +162,6 @@ def build_cjpeg_turbo_1_3_tasks(source: dict, quick: bool) -> list[EncoderTask]:
         "/opt/libjpeg-turbo-1.3.0/lib")
 
 
-def build_cjpeg_turbo_1_4_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """libjpeg-turbo 1.4.2 — Ubuntu 16.04 Xenial."""
-    return _build_cjpeg_turbo_version_tasks(
-        source, quick, "CJPEG_TURBO_1_4", "libjpeg-turbo-1.4.2",
-        "/opt/libjpeg-turbo-1.4.2/lib")
-
-
-def build_cjpeg_turbo_1_5_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """libjpeg-turbo 1.5.2 — Ubuntu 18.04 Bionic."""
-    return _build_cjpeg_turbo_version_tasks(
-        source, quick, "CJPEG_TURBO_1_5", "libjpeg-turbo-1.5.2",
-        "/opt/libjpeg-turbo-1.5.2/lib")
-
-
 def build_cjpeg_turbo_2_0_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     """libjpeg-turbo 2.0.3 — Ubuntu 20.04 Focal."""
     return _build_cjpeg_turbo_version_tasks(
@@ -608,8 +594,6 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
 TASK_BUILDERS = [
     # libjpeg-turbo versions (Ubuntu LTS history + latest)
     build_cjpeg_turbo_1_3_tasks,   # Ubuntu 14.04
-    build_cjpeg_turbo_1_4_tasks,   # Ubuntu 16.04
-    build_cjpeg_turbo_1_5_tasks,   # Ubuntu 18.04
     build_cjpeg_turbo_2_0_tasks,   # Ubuntu 20.04
     build_cjpeg_turbo_2_1_2_tasks, # Ubuntu 22.04
     build_cjpeg_turbo_2_1_5_tasks, # Ubuntu 24.04

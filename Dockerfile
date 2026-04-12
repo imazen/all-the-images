@@ -62,10 +62,22 @@ FROM base AS libjpeg-classic
 #   9d  — Ubuntu 20.04/22.04
 #   10  — released 2026-01-25, not yet in any Ubuntu
 # Skipping 9e/9f (incremental between 9d and 10, less interesting).
-RUN for v in 6b 9b 9d 10; do \
+# v6b needs directories pre-created (1998-era Makefile doesn't mkdir)
+RUN mkdir -p /opt/libjpeg-6b/bin /opt/libjpeg-6b/lib \
+             /opt/libjpeg-6b/include /opt/libjpeg-6b/man/man1 \
+    && curl -fsSL "https://www.ijg.org/files/jpegsrc.v6b.tar.gz" \
+        | tar xz -C /tmp \
+    && cd /tmp/jpeg-6b \
+    && ./configure --prefix=/opt/libjpeg-6b \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd /
+
+# v9b, v9d, v10 use modern autotools
+RUN for v in 9b 9d 10; do \
         curl -fsSL "https://www.ijg.org/files/jpegsrc.v${v}.tar.gz" \
             | tar xz -C /tmp \
-        && cd /tmp/jpeg-${v}* \
+        && cd /tmp/jpeg-${v} \
         && ./configure --prefix=/opt/libjpeg-${v} \
         && make -j"$(nproc)" \
         && make install \
@@ -102,8 +114,12 @@ RUN git clone --depth 1 --branch 1.3.0 \
     && make -j"$(nproc)" \
     && make install
 
-# v1.4.2+ (cmake)
-RUN for tag in 1.4.2 1.5.2 2.0.3 2.1.2 2.1.5 3.1.0; do \
+# v1.4.2, v1.5.2 skipped: cjpeg.c includes <io.h> (Windows-only)
+# and jdhuff.h can't detect word size on modern GCC. Not worth patching —
+# 1.3.0 and 2.0.3 bracket the interesting range.
+#
+# v2.0.3+ build cleanly on modern GCC
+RUN for tag in 2.0.3 2.1.2 2.1.5 3.1.0; do \
         git clone --depth 1 --branch ${tag} \
             https://github.com/libjpeg-turbo/libjpeg-turbo.git /tmp/turbo-${tag} \
         && cd /tmp/turbo-${tag} \
@@ -410,8 +426,7 @@ COPY --from=libjpeg-classic     /opt/libjpeg-10                    /opt/libjpeg-
 
 # ── libjpeg-turbo versions (matching Ubuntu LTS history) ──
 COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-1.3.0           /opt/libjpeg-turbo-1.3.0
-COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-1.4.2           /opt/libjpeg-turbo-1.4.2
-COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-1.5.2           /opt/libjpeg-turbo-1.5.2
+# 1.4.2, 1.5.2 skipped (can't compile on modern GCC without patches)
 COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-2.0.3           /opt/libjpeg-turbo-2.0.3
 COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-2.1.2           /opt/libjpeg-turbo-2.1.2
 COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-2.1.5           /opt/libjpeg-turbo-2.1.5
@@ -459,8 +474,6 @@ ENV CJPEG_IJG6B="/opt/libjpeg-6b/bin/cjpeg" \
 
 # ── libjpeg-turbo aliases (one per Ubuntu LTS version) ──
 ENV CJPEG_TURBO_1_3="/opt/libjpeg-turbo-1.3.0/bin/cjpeg" \
-    CJPEG_TURBO_1_4="/opt/libjpeg-turbo-1.4.2/bin/cjpeg" \
-    CJPEG_TURBO_1_5="/opt/libjpeg-turbo-1.5.2/bin/cjpeg" \
     CJPEG_TURBO_2_0="/opt/libjpeg-turbo-2.0.3/bin/cjpeg" \
     CJPEG_TURBO_2_1_2="/opt/libjpeg-turbo-2.1.2/bin/cjpeg" \
     CJPEG_TURBO_2_1_5="/opt/libjpeg-turbo-2.1.5/bin/cjpeg" \
