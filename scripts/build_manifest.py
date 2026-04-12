@@ -239,6 +239,8 @@ def build_manifest(results_path: Path, sources_path: Path,
             "height": s["h"],
             "channels": s["channels"],
             "type": s["type"],
+            "bit_depth": s.get("bit_depth", 8),
+            "color_space": s.get("color_space", "srgb"),
         }
 
     # Collect successful results, dedup by output hash.
@@ -252,10 +254,13 @@ def build_manifest(results_path: Path, sources_path: Path,
     encoders_used = set()
     sources_used = set()
     failures = 0
+    failure_categories: dict[str, int] = {}  # category -> count
 
     for r in results:
         if not r["success"]:
             failures += 1
+            cat = r.get("failure_category", "uncategorized")
+            failure_categories[cat] = failure_categories.get(cat, 0) + 1
             continue
 
         encoders_used.add(r["encoder_id"])
@@ -328,6 +333,7 @@ def build_manifest(results_path: Path, sources_path: Path,
             "encoders_used": len(encoders_used),
             "sources_used": len(sources_used),
             "encoding_failures": failures,
+            "failure_categories": failure_categories,
             "files_with_coproducers": files_with_dupes,
             "total_coproductions": total_coprod,
         },

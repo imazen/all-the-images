@@ -54,6 +54,92 @@ class EncoderResult:
     output_path: str = ""
     error: str = ""
     expect_fail: bool = False
+    failure_category: str = ""  # populated on failure
+
+
+def make_failure(task: "EncoderTask", error: str) -> "EncoderResult":
+    """Create a categorized failure result."""
+    return EncoderResult(
+        encoder_id=task.encoder_id,
+        source_name=task.source_name,
+        params=task.params,
+        success=False,
+        error=error,
+        failure_category=categorize_failure(error),
+    )
+
+
+def categorize_failure(error: str, task: "EncoderTask | None" = None) -> str:
+    """Classify an encoding failure into a category.
+
+    Categories:
+      source_format    — encoder can't read the input file format
+      params_rejected  — encoder rejects the parameter combination
+      timeout          — encoding exceeded time limit
+      conversion_failed — PPM→PNG/GIF pre-conversion failed
+      invalid_output   — encoder ran but output is corrupt/empty
+      encoder_error    — other encoder-side failure
+    """
+    e = error.lower()
+
+    if "timeout" in e:
+        return "timeout"
+
+    if "conversion failed" in e or "png conversion" in e:
+        return "conversion_failed"
+
+    if not e.strip():
+        return "conversion_failed"  # empty stderr usually means silent failure
+
+    if "output too small" in e or "invalid so" in e or "invalid webp" in e \
+            or "invalid png" in e or "invalid gif" in e:
+        return "invalid_output"
+
+    # Source format / input read failures
+    if any(p in e for p in [
+        "unrecognized input",
+        "failed to decode input",
+        "failed to read",
+        "cannot read",
+        "not compiled",       # "TIFF support not compiled"
+        "marker byte",        # guetzli can't read PPM
+        "not a png",
+        "unknown input",
+        "error reading",
+        "getting pixel data",  # cjxl on CMYK TIFF
+        "incorrect png signature",  # zopflipng fed non-PNG
+        "decoding error",     # optipng/zopflipng parse failure
+        "could not load",
+        "no such file",
+        "input file read error",
+        "unreadable",
+        "corrupt",
+        "not in gif format",       # gifsicle fed non-GIF
+        "support is disabled",     # mozjpeg without PNG support
+        "can't read",
+    ]):
+        return "source_format"
+
+    # Parameter / dimension rejections
+    if any(p in e for p in [
+        "expected an argument",
+        "invalid argument",
+        "too small",
+        "minimum",
+        "unsupported",
+        "not supported",
+        "invalid option",
+        "invalid value",
+        "cannot encode",
+        "bad parameter",
+        "illegal",
+        "valid palette required",  # ImageMagick palette constraint
+        "rowsperstrip must be",    # libtiff JPEG constraint
+        "must be multiple",
+    ]):
+        return "params_rejected"
+
+    return "encoder_error"
 
 
 # ── Encoder definitions ────────────────────────────────────────────────────
@@ -483,13 +569,8 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
                 capture_output=True, timeout=30,
             )
             if conv.returncode != 0:
-                return EncoderResult(
-                    encoder_id=task.encoder_id,
-                    source_name=task.source_name,
-                    params=task.params,
-                    success=False,
-                    error=f"PNG conversion failed: {conv.stderr.decode()[:200]}",
-                )
+                return make_failure(task,
+                    f"PNG conversion failed: {conv.stderr.decode()[:200]}")
             input_path = tmp_png
 
         # Substitute {output} and {input} placeholders in command
@@ -514,36 +595,20 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
         )
 
         if result.returncode != 0:
-            return EncoderResult(
-                encoder_id=task.encoder_id,
-                source_name=task.source_name,
-                params=task.params,
-                success=False,
-                error=result.stderr.decode("utf-8", errors="replace")[:500],
-            )
+            return make_failure(task,
+                result.stderr.decode("utf-8", errors="replace")[:500])
 
         # Read output and hash
         with open(tmp_path, "rb") as f:
             data = f.read()
 
         if len(data) < 4:
-            return EncoderResult(
-                encoder_id=task.encoder_id,
-                source_name=task.source_name,
-                params=task.params,
-                success=False,
-                error=f"Output too small: {len(data)} bytes",
-            )
+            return make_failure(task, f"Output too small: {len(data)} bytes")
 
         # Verify JPEG SOI marker
         if data[0] != 0xFF or data[1] != 0xD8:
-            return EncoderResult(
-                encoder_id=task.encoder_id,
-                source_name=task.source_name,
-                params=task.params,
-                success=False,
-                error=f"Invalid SOI: {data[0]:02x} {data[1]:02x}",
-            )
+            return make_failure(task,
+                f"Invalid SOI: {data[0]:02x} {data[1]:02x}")
 
         content_hash = hashlib.sha256(data).hexdigest()[:16]
 
@@ -570,21 +635,9 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
         )
 
     except subprocess.TimeoutExpired:
-        return EncoderResult(
-            encoder_id=task.encoder_id,
-            source_name=task.source_name,
-            params=task.params,
-            success=False,
-            error="Timeout (300s)",
-        )
+        return make_failure(task, "Timeout (300s)")
     except Exception as e:
-        return EncoderResult(
-            encoder_id=task.encoder_id,
-            source_name=task.source_name,
-            params=task.params,
-            success=False,
-            error=str(e)[:500],
-        )
+        return make_failure(task, str(e)[:500])
     finally:
         for p in [tmp_path, tmp_png]:
             if p:

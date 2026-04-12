@@ -141,7 +141,7 @@ def build_cjxl_modular_tasks(source: dict, quick: bool) -> list[EncoderTask]:
                 cmd += ["{output}"]
                 cmd += ["-d", str(dist)]
                 cmd += ["-e", str(effort)]
-                cmd += ["--modular"]
+                cmd += ["--modular=1"]
                 if prog:
                     cmd += ["-p"]
 

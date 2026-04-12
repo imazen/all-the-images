@@ -47,7 +47,7 @@ FORMAT_ENCODERS = [
 
 def result_to_dict(r) -> dict:
     """Convert an EncoderResult to a JSON-serializable dict."""
-    return {
+    d = {
         "encoder_id": r.encoder_id,
         "source_name": r.source_name,
         "params": r.params,
@@ -58,6 +58,34 @@ def result_to_dict(r) -> dict:
         "error": r.error,
         "expect_fail": r.expect_fail,
     }
+    if r.failure_category:
+        d["failure_category"] = r.failure_category
+    return d
+
+
+def print_failure_summary(results: list) -> None:
+    """Print categorized failure breakdown."""
+    from collections import Counter
+    failures = [r for r in results if not r.success]
+    if not failures:
+        return
+
+    # Categorize any failures missing a category (from other format scripts)
+    for r in failures:
+        if not r.failure_category:
+            r.failure_category = encode_jpeg.categorize_failure(r.error)
+
+    # By category
+    by_cat = Counter(r.failure_category for r in failures)
+    print("  Failures by category:")
+    for cat, count in by_cat.most_common():
+        print(f"    {cat:20s} {count:5d}")
+
+    # By encoder × category (top 10)
+    by_enc_cat = Counter((r.encoder_id, r.failure_category) for r in failures)
+    print("  Top failure encoder×category:")
+    for (enc, cat), count in by_enc_cat.most_common(10):
+        print(f"    {enc:30s} {cat:20s} {count:5d}")
 
 
 def main():
@@ -140,6 +168,11 @@ def main():
         step += 1
         print()
 
+    # Categorize failures before serialization so categories are in the JSON
+    for r in all_results:
+        if not r.success and not r.failure_category:
+            r.failure_category = encode_jpeg.categorize_failure(r.error)
+
     # Save all results
     results_json = output / "encoding_results.json"
     with open(results_json, "w") as f:
@@ -157,6 +190,8 @@ def main():
     print(f"  Unique: {stats['unique_hashes']}")
     print(f"  Size: {stats['total_bytes'] / 1024 / 1024:.1f} MB")
     print(f"  Failures: {stats['encoding_failures']}")
+    if stats['encoding_failures'] > 0:
+        print_failure_summary(all_results)
     print()
     step += 1
 
