@@ -81,6 +81,8 @@ def build_imagemagick_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     convert reads PPM/PGM directly, no intermediate PNG needed.
     Parameters: bit depth, color type, interlace, compression quality (zlib level).
     """
+    if source.get("type") == "cmyk":
+        return []
     binary = "convert"
     encoder_id = "imagemagick-convert"
     tasks = []
@@ -91,11 +93,17 @@ def build_imagemagick_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     interlaces = ["None", "Line"] if quick else ["None", "Line", "Plane"]
 
     if is_gray:
-        color_types = ["Grayscale"] if quick else ["Grayscale"]
+        color_types = ["Grayscale"]
     else:
-        color_types = ["TrueColor", "Palette"] if quick else [
-            "TrueColor", "Palette",
-        ]
+        # Palette mode only works if the image has ≤256 unique colors.
+        # Noise images at 32x32+ always exceed this. Only offer Palette
+        # for small images or non-noise patterns.
+        w, h = source.get("w", 0), source.get("h", 0)
+        can_palette = (w * h <= 256) or source.get("type") in ("checkerboard", "bands", "edges")
+        if can_palette:
+            color_types = ["TrueColor", "Palette"] if quick else ["TrueColor", "Palette"]
+        else:
+            color_types = ["TrueColor"]
 
     for depth in depths:
         for color_type in color_types:
@@ -143,11 +151,9 @@ def build_imagemagick_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
 
 def build_optipng_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """OptiPNG optimization permutations.
-
-    optipng reads PNG input, so needs_png_input=True for PPM sources.
-    Parameters: optimization level (-o0 to -o7), interlace, strip metadata.
-    """
+    """OptiPNG optimization permutations."""
+    if source.get("type") == "cmyk":
+        return []
     binary = env_bin("OPTIPNG")
     if not binary:
         return []
@@ -196,11 +202,9 @@ def build_optipng_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
 
 def build_pngcrush_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """pngcrush optimization permutations.
-
-    pngcrush reads PNG input, so needs_png_input=True for PPM sources.
-    Parameters: brute-force, method, filter, text chunk removal.
-    """
+    """pngcrush optimization permutations."""
+    if source.get("type") == "cmyk":
+        return []
     binary = env_bin("PNGCRUSH")
     if not binary:
         return []
@@ -278,11 +282,9 @@ def build_pngcrush_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
 
 def build_zopflipng_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """zopflipng optimization permutations.
-
-    zopflipng reads PNG input, so needs_png_input=True for PPM sources.
-    Parameters: iterations, filter strategies, lossy modes.
-    """
+    """zopflipng optimization permutations."""
+    if source.get("type") == "cmyk":
+        return []
     binary = env_bin("ZOPFLIPNG")
     if not binary:
         return []
@@ -348,6 +350,9 @@ def run_task_png(task: EncoderTask, output_dir: Path) -> EncoderResult:
     """Execute a single PNG encoding task."""
     fd, tmp_path = tempfile.mkstemp(suffix=".png")
     os.close(fd)
+    # Remove the empty mkstemp file — some encoders (optipng) get confused
+    # by a pre-existing 0-byte output file.
+    os.unlink(tmp_path)
     tmp_png_input = None
 
     try:
@@ -390,7 +395,11 @@ def run_task_png(task: EncoderTask, output_dir: Path) -> EncoderResult:
             env=env,
         )
 
-        if result.returncode != 0:
+        # PNG optimizers (optipng, pngcrush, zopflipng) write progress to
+        # stderr and may return non-zero for "already optimal". Check the
+        # output file instead of relying solely on exit code.
+        output_exists = os.path.isfile(tmp_path) and os.path.getsize(tmp_path) > 0
+        if result.returncode != 0 and not output_exists:
             return EncoderResult(
                 encoder_id=task.encoder_id,
                 source_name=task.source_name,

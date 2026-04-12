@@ -33,8 +33,7 @@ from encode_jpeg import EncoderTask, EncoderResult, env_bin, _env_warned
 
 def build_cwebp_lossy_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     """libwebp cwebp lossy parameter permutations."""
-    # WebP is 8-bit only
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source.get("type") == "cmyk":
         return []
     binary = env_bin("CWEBP")
     if not binary:
@@ -118,7 +117,7 @@ def build_cwebp_lossy_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
 def build_cwebp_lossless_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     """libwebp cwebp lossless parameter permutations."""
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source.get("type") == "cmyk":
         return []
     binary = env_bin("CWEBP")
     if not binary:

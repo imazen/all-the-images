@@ -142,6 +142,36 @@ def categorize_failure(error: str, task: "EncoderTask | None" = None) -> str:
     return "encoder_error"
 
 
+# ── Source compatibility helpers ────────────────────────────────────────────
+
+def source_is_cmyk(source: dict) -> bool:
+    return source.get("type") == "cmyk" or source.get("channels") == 4
+
+
+def source_is_hdr(source: dict) -> bool:
+    return source.get("bit_depth", 8) > 8 or source.get("color_space") in ("pq", "hlg", "linear")
+
+
+def source_min_dim(source: dict) -> int:
+    return min(source.get("w", 0), source.get("h", 0))
+
+
+def source_can_subsample(source: dict, h_factor: int = 2, v_factor: int = 2) -> bool:
+    """Check if source dimensions support chroma subsampling.
+
+    Subsampled chroma needs at least (factor * MCU_size) pixels in each
+    direction. For 4:2:0 that's 2*8=16. For 4:2:2 that's 2*8=16 wide.
+    Many encoders reject smaller images outright.
+    """
+    w, h = source.get("w", 0), source.get("h", 0)
+    # Be conservative: need at least factor*8 in each subsampled dimension
+    if h_factor > 1 and w < h_factor * 8:
+        return False
+    if v_factor > 1 and h < v_factor * 8:
+        return False
+    return True
+
+
 # ── Encoder definitions ────────────────────────────────────────────────────
 
 _env_warned: set[str] = set()
@@ -159,8 +189,7 @@ def _build_cjpeg_turbo_version_tasks(source: dict, quick: bool,
                                       env_name: str, encoder_id: str,
                                       lib_path: str) -> list[EncoderTask]:
     """libjpeg-turbo cjpeg parameter permutations for a single version."""
-    # JPEG is 8-bit only — skip 16-bit and HDR sources
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source_is_cmyk(source):
         return []
     binary = env_bin(env_name)
     if not binary:
@@ -178,7 +207,20 @@ def _build_cjpeg_turbo_version_tasks(source: dict, quick: bool,
     arithmetics = [False, True] if not quick else [False]
 
     is_gray = source["channels"] == 1
-    subs = ["1x1"] if is_gray else subsampling_rgb
+
+    # Filter subsampling modes by source dimensions
+    if is_gray:
+        subs = ["1x1"]
+    else:
+        subs = []
+        for sub in subsampling_rgb:
+            # Parse HxV factors, check source is big enough
+            parts = sub.split("x")
+            h_f, v_f = int(parts[0]), int(parts[1])
+            if source_can_subsample(source, h_f, v_f):
+                subs.append(sub)
+        if not subs:
+            subs = ["1x1"]  # fallback to no subsampling
 
     for q in qualities:
         for sub in subs:
@@ -283,7 +325,7 @@ def _build_cjpeg_ijg_version_tasks(source: dict, quick: bool,
     v6b: no arithmetic, no block sizes, no progressive in cjpeg
     v9+: arithmetic coding, block sizes 1-16, RGB identity encoding
     """
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source_is_cmyk(source):
         return []
     binary = env_bin(env_name)
     if not binary:
@@ -362,7 +404,7 @@ def build_cjpeg_ijg10_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
 def build_mozjpeg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     """mozjpeg parameter permutations."""
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source_is_cmyk(source):
         return []
     binary = env_bin("CJPEG_MOZ")
     if not binary:
@@ -428,7 +470,10 @@ def build_cjpegli_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
     jpegli uses distance-based quality (butteraugli distance) and supports
     XYB colorspace, adaptive quantization, and progressive levels 0-2.
+    jpegli reads PPM, PFM, and PNG — but not CMYK TIFF.
     """
+    if source_is_cmyk(source):
+        return []
     binary = env_bin("CJPEGLI")
     if not binary:
         return []
@@ -442,7 +487,18 @@ def build_cjpegli_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     subsampling_rgb = ["444", "422", "420"] if not quick else ["444", "420"]
     prog_levels = [0, 1, 2] if not quick else [0, 2]
 
-    subs = ["444"] if is_gray else subsampling_rgb
+    # Filter subsampling by source dimensions
+    if is_gray:
+        subs = ["444"]
+    else:
+        subs = []
+        for sub in subsampling_rgb:
+            h_f = 2 if sub in ("422", "420") else 1
+            v_f = 2 if sub == "420" else 1
+            if source_can_subsample(source, h_f, v_f):
+                subs.append(sub)
+        if not subs:
+            subs = ["444"]
 
     for dist in distances:
         for sub in subs:
@@ -508,7 +564,7 @@ def build_guetzli_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     Guetzli is VERY slow (minutes per image). Only used on small sources
     with limited quality levels. Minimum quality is 84.
     """
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source_is_cmyk(source):
         return []
     binary = env_bin("GUETZLI")
     if not binary:

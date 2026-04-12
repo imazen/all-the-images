@@ -62,8 +62,7 @@ def build_gifsicle_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     a PPM/PGM source. The cmd here operates on {input} which will be
     a pre-converted GIF.
     """
-    # GIF is 8-bit palette only
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source.get("type") == "cmyk":
         return []
     binary = env_bin("GIFSICLE")
     if not binary:
@@ -126,7 +125,7 @@ def build_imagemagick_gif_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     ImageMagick can read PPM directly and output GIF with various
     quantization and dithering options.
     """
-    if source.get("bit_depth", 8) > 8:
+    if source.get("bit_depth", 8) > 8 or source.get("type") == "cmyk":
         return []
     binary = "convert"  # ImageMagick convert is expected in PATH
     encoder_id = "imagemagick-gif"

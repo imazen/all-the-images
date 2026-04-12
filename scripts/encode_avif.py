@@ -41,6 +41,9 @@ def build_avifenc_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     minutes per image. We limit image sizes for slow speeds and use a
     generous timeout.
     """
+    # avifenc can't read CMYK
+    if source.get("type") == "cmyk" or source.get("channels") == 4:
+        return []
     binary = env_bin("AVIFENC")
     if not binary:
         return []

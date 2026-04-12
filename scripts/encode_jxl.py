@@ -54,11 +54,9 @@ def _is_jxl(data: bytes) -> bool:
 # ── Encoder definitions ──────────────────────────────────────────────────
 
 def build_cjxl_lossy_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """cjxl lossy (VarDCT) parameter permutations.
-
-    VarDCT is the default lossy mode. It uses XYB color space by default.
-    We test distance values, effort levels, progressive, and colorspace.
-    """
+    """cjxl lossy (VarDCT) parameter permutations."""
+    if source.get("type") == "cmyk" or source.get("channels") == 4:
+        return []
     binary = env_bin("CJXL")
     if not binary:
         return []
@@ -116,11 +114,9 @@ def build_cjxl_lossy_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
 
 def build_cjxl_modular_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """cjxl modular mode parameter permutations.
-
-    Modular mode is used for lossless and can also be used for lossy.
-    With -d 0, encoding is mathematically lossless.
-    """
+    """cjxl modular mode parameter permutations."""
+    if source.get("type") == "cmyk" or source.get("channels") == 4:
+        return []
     binary = env_bin("CJXL")
     if not binary:
         return []
