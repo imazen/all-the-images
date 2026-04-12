@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/imazen/all-the-images/manifest/schema.json",
+  "title": "all-the-images corpus manifest",
+  "description": "Describes every file in a generated corpus: encoder provenance, parameters, content hash, and reference decoder pixel hashes.",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "encoders", "sources", "files"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of this schema."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp of corpus generation."
+    },
+    "docker_image_hash": {
+      "type": "string",
+      "description": "SHA-256 of the Docker image used for generation."
+    },
+    "encoders": {
+      "type": "object",
+      "description": "Map of encoder-id to encoder metadata.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "version", "binary"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable encoder name."
+          },
+          "version": {
+            "type": "string",
+            "description": "Version string (semver or git tag)."
+          },
+          "binary": {
+            "type": "string",
+            "description": "Binary name (e.g. cjpeg, cjpegli, guetzli)."
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the source repo or tarball."
+          },
+          "compile_flags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Non-default compile flags used."
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "description": "Map of source-name to source image metadata.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["width", "height", "channels", "type"],
+        "properties": {
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "channels": { "type": "integer", "enum": [1, 3, 4] },
+          "type": {
+            "type": "string",
+            "enum": ["noise", "patches", "checkerboard", "edges", "bands", "cmyk", "photographic"]
+          }
+        }
+      }
+    },
+    "decoders": {
+      "type": "object",
+      "description": "Map of decoder-id to decoder metadata (used for reference decodes).",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "version"],
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "binary": { "type": "string" }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "Every encoded file in the corpus.",
+      "items": {
+        "type": "object",
+        "required": ["path", "blake3", "bytes", "format", "encoder", "source", "params"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative path within the corpus tarball."
+          },
+          "blake3": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "BLAKE3 hash of the encoded file content."
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "File size in bytes."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["jpeg", "png", "webp", "avif", "jxl", "gif", "tiff", "heic"],
+            "description": "Image format."
+          },
+          "encoder": {
+            "type": "string",
+            "description": "Encoder ID (key into top-level encoders map)."
+          },
+          "source": {
+            "type": "string",
+            "description": "Source image name (key into top-level sources map)."
+          },
+          "params": {
+            "type": "object",
+            "description": "Encoder parameters used. Schema varies by encoder.",
+            "additionalProperties": true
+          },
+          "reference_decodes": {
+            "type": "object",
+            "description": "Map of decoder-id to BLAKE3 hash of decoded raw pixels (row-major, no padding).",
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "markers": {
+            "type": "array",
+            "description": "JPEG marker list (SOI, SOF0, SOS, etc.) for format-aware testing.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "description": "Corpus-level statistics.",
+      "properties": {
+        "total_files": { "type": "integer" },
+        "total_bytes": { "type": "integer" },
+        "unique_hashes": { "type": "integer" },
+        "encoders_used": { "type": "integer" },
+        "sources_used": { "type": "integer" },
+        "encoding_failures": { "type": "integer" }
+      }
+    }
+  }
+}

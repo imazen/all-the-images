@@ -1,0 +1,32 @@
+# all-the-images corpus generation
+#
+# Usage:
+#   docker compose build              # Build the image (compiles all encoders)
+#   docker compose run --rm generate  # Full corpus generation
+#   docker compose run --rm quick     # Quick smoke-test subset
+#   docker compose run --rm shell     # Interactive shell with all encoders
+
+services:
+  generate:
+    build: .
+    volumes:
+      - ./corpus:/output
+    environment:
+      - QUICK_MODE=0
+    command: ["--output", "/output"]
+
+  quick:
+    build: .
+    volumes:
+      - ./corpus:/output
+    environment:
+      - QUICK_MODE=1
+    command: ["--output", "/output", "--quick"]
+
+  shell:
+    build: .
+    volumes:
+      - ./corpus:/output
+    entrypoint: /bin/bash
+    stdin_open: true
+    tty: true
