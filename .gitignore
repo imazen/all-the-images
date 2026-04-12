@@ -1,0 +1,27 @@
+# Generated corpus output
+/corpus/
+/output/
+
+# Docker build cache
+.docker-cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Temp
+/tmp/
+*.log

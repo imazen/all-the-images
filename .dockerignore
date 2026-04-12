@@ -1,0 +1,9 @@
+# Don't send corpus output to Docker build context
+corpus/
+output/
+.git/
+.docker-cache/
+__pycache__/
+*.pyc
+tmp/
+*.log
