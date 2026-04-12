@@ -154,10 +154,11 @@ RUN git clone --depth 1 --branch v${LIBJXL_VERSION} --recurse-submodules --shall
         -DJPEGXL_ENABLE_EXAMPLES=OFF \
         -DJPEGXL_ENABLE_DOXYGEN=OFF \
         -DBUILD_TESTING=OFF \
-    && cmake --build build -j"$(nproc)" --target cjpegli djpegli \
+    && cmake --build build -j"$(nproc)" --target cjpegli djpegli cjxl djxl \
     && mkdir -p /opt/jpegli-${LIBJXL_VERSION}/bin \
            /opt/jpegli-${LIBJXL_VERSION}/lib \
     && cp build/tools/cjpegli build/tools/djpegli \
+          build/tools/cjxl build/tools/djxl \
           /opt/jpegli-${LIBJXL_VERSION}/bin/ \
     && cp -a build/lib/*.so* /opt/jpegli-${LIBJXL_VERSION}/lib/ 2>/dev/null || true
 
@@ -181,6 +182,157 @@ RUN git clone --depth 1 --branch v${GUETZLI_VERSION} \
     && cp bin/Release/guetzli /opt/guetzli-${GUETZLI_VERSION}/bin/
 
 # ============================================================================
+# Stage: libwebp — WebP encoder/decoder (lossy + lossless)
+# ============================================================================
+FROM base AS libwebp
+
+ARG LIBWEBP_VERSION=1.5.0
+RUN git clone --depth 1 --branch v${LIBWEBP_VERSION} \
+        https://github.com/webmproject/libwebp.git /tmp/libwebp \
+    && cd /tmp/libwebp \
+    && cmake -B build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/opt/libwebp-${LIBWEBP_VERSION} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DWEBP_BUILD_CWEBP=ON \
+        -DWEBP_BUILD_DWEBP=ON \
+        -DWEBP_BUILD_GIF2WEBP=OFF \
+        -DWEBP_BUILD_IMG2WEBP=OFF \
+        -DWEBP_BUILD_WEBPINFO=OFF \
+        -DWEBP_BUILD_WEBPMUX=OFF \
+        -DWEBP_BUILD_EXTRAS=OFF \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build
+
+# ============================================================================
+# Stage: aom — AV1 codec (used by libavif)
+# ============================================================================
+FROM base AS aom
+
+ARG AOM_VERSION=3.12.0
+RUN git clone --depth 1 --branch v${AOM_VERSION} \
+        https://aomedia.googlesource.com/aom /tmp/aom \
+    && cd /tmp/aom \
+    && cmake -B build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/opt/aom-${AOM_VERSION} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DENABLE_DOCS=OFF \
+        -DENABLE_EXAMPLES=OFF \
+        -DENABLE_TESTDATA=OFF \
+        -DENABLE_TESTS=OFF \
+        -DENABLE_TOOLS=OFF \
+        -DBUILD_SHARED_LIBS=ON \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build
+
+# ============================================================================
+# Stage: libavif — AVIF encoder/decoder with aom backend
+# ============================================================================
+FROM aom AS libavif
+
+ARG LIBAVIF_VERSION=1.2.1
+ARG AOM_VERSION=3.12.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpng-dev libjpeg-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch v${LIBAVIF_VERSION} \
+        https://github.com/AOMediaCodec/libavif.git /tmp/libavif \
+    && cd /tmp/libavif \
+    && cmake -B build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/opt/libavif-${LIBAVIF_VERSION} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DAVIF_CODEC_AOM=SYSTEM \
+        -DAVIF_BUILD_APPS=ON \
+        -DCMAKE_PREFIX_PATH=/opt/aom-${AOM_VERSION} \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build \
+    && cp -a /opt/aom-${AOM_VERSION}/lib/*.so* /opt/libavif-${LIBAVIF_VERSION}/lib/ 2>/dev/null || true
+
+# ============================================================================
+# Stage: zopfli — Google's zopfli compression (zopflipng for PNG optimization)
+# ============================================================================
+FROM base AS zopfli
+
+ARG ZOPFLI_VERSION=1.0.3
+RUN git clone --depth 1 --branch zopfli-${ZOPFLI_VERSION} \
+        https://github.com/google/zopfli.git /tmp/zopfli \
+    && cd /tmp/zopfli \
+    && cmake -B build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/opt/zopfli-${ZOPFLI_VERSION} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DZOPFLI_BUILD_SHARED=OFF \
+    && cmake --build build -j"$(nproc)" \
+    && mkdir -p /opt/zopfli-${ZOPFLI_VERSION}/bin \
+    && cp build/zopflipng /opt/zopfli-${ZOPFLI_VERSION}/bin/
+
+# ============================================================================
+# Stage: gifsicle — GIF optimizer
+# ============================================================================
+FROM base AS gifsicle
+
+ARG GIFSICLE_VERSION=1.95
+RUN git clone --depth 1 --branch v${GIFSICLE_VERSION} \
+        https://github.com/kohler/gifsicle.git /tmp/gifsicle \
+    && cd /tmp/gifsicle \
+    && autoreconf -i \
+    && ./configure --prefix=/opt/gifsicle-${GIFSICLE_VERSION} \
+    && make -j"$(nproc)" \
+    && make install
+
+# ============================================================================
+# Stage: libtiff — TIFF tools (tiffcp, tiffinfo, etc.)
+# ============================================================================
+FROM base AS libtiff
+
+ARG LIBTIFF_VERSION=4.7.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libjpeg-dev zlib1g-dev liblzma-dev libzstd-dev libwebp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch v${LIBTIFF_VERSION} \
+        https://gitlab.com/libtiff/libtiff.git /tmp/libtiff \
+    && cd /tmp/libtiff \
+    && cmake -B build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/opt/libtiff-${LIBTIFF_VERSION} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -Dtiff-tools=ON \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build
+
+# ============================================================================
+# Stage: libheif — HEIC encoder/decoder with x265 backend
+# ============================================================================
+FROM base AS libheif
+
+ARG X265_VERSION=4.1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpng-dev libjpeg-dev libde265-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build x265
+RUN git clone --depth 1 --branch ${X265_VERSION} \
+        https://bitbucket.org/multicoreware/x265_git.git /tmp/x265 \
+    && cd /tmp/x265/source \
+    && cmake -B build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DENABLE_SHARED=ON \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build
+
+ARG LIBHEIF_VERSION=1.19.7
+RUN git clone --depth 1 --branch v${LIBHEIF_VERSION} \
+        https://github.com/strukturag/libheif.git /tmp/libheif \
+    && cd /tmp/libheif \
+    && cmake -B build -G Ninja \
+        -DCMAKE_INSTALL_PREFIX=/opt/libheif-${LIBHEIF_VERSION} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DWITH_EXAMPLES=ON \
+        -DWITH_GDK_PIXBUF=OFF \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build
+
+# ============================================================================
 # Stage: runtime — all binaries + Python + generation scripts
 # ============================================================================
 FROM ubuntu:24.04 AS runtime
@@ -192,25 +344,52 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpng16-16t64 \
         libgif7 \
         libbrotli1 \
+        libde265-0 \
+        liblzma5 \
+        libzstd1 \
         imagemagick \
+        optipng \
+        pngcrush \
     && rm -rf /var/lib/apt/lists/*
 
 # blake3 for content hashing
 RUN pip3 install --no-cache-dir --break-system-packages blake3==1.0.4
 
-# Copy encoder/decoder installations from build stages
-COPY --from=libjpeg-classic  /opt/libjpeg-9e                    /opt/libjpeg-9e
-COPY --from=libjpeg-turbo    /opt/libjpeg-turbo-3.1.0           /opt/libjpeg-turbo-3.1.0
-COPY --from=libjpeg-turbo-12bit /opt/libjpeg-turbo-3.1.0-12bit  /opt/libjpeg-turbo-3.1.0-12bit
-COPY --from=mozjpeg          /opt/mozjpeg-4.1.5                  /opt/mozjpeg-4.1.5
-COPY --from=jpegli           /opt/jpegli-0.11.1                  /opt/jpegli-0.11.1
-COPY --from=guetzli          /opt/guetzli-1.0.1                  /opt/guetzli-1.0.1
+# ── JPEG encoders ──
+COPY --from=libjpeg-classic     /opt/libjpeg-9e                    /opt/libjpeg-9e
+COPY --from=libjpeg-turbo       /opt/libjpeg-turbo-3.1.0           /opt/libjpeg-turbo-3.1.0
+COPY --from=libjpeg-turbo-12bit /opt/libjpeg-turbo-3.1.0-12bit     /opt/libjpeg-turbo-3.1.0-12bit
+COPY --from=mozjpeg             /opt/mozjpeg-4.1.5                  /opt/mozjpeg-4.1.5
+COPY --from=jpegli              /opt/jpegli-0.11.1                  /opt/jpegli-0.11.1
+COPY --from=guetzli             /opt/guetzli-1.0.1                  /opt/guetzli-1.0.1
+
+# ── WebP ──
+COPY --from=libwebp             /opt/libwebp-1.5.0                  /opt/libwebp-1.5.0
+
+# ── AVIF ──
+COPY --from=libavif             /opt/libavif-1.2.1                  /opt/libavif-1.2.1
+
+# ── JPEG XL (cjxl/djxl shared with jpegli stage) ──
+# Already copied via jpegli stage above (cjxl/djxl live alongside cjpegli/djpegli)
+
+# ── PNG optimizers ──
+COPY --from=zopfli              /opt/zopfli-1.0.3                   /opt/zopfli-1.0.3
+# optipng and pngcrush are installed from apt above
+
+# ── GIF ──
+COPY --from=gifsicle            /opt/gifsicle-1.95                  /opt/gifsicle-1.95
+
+# ── TIFF ──
+COPY --from=libtiff             /opt/libtiff-4.7.0                  /opt/libtiff-4.7.0
+
+# ── HEIC ──
+COPY --from=libheif             /opt/libheif-1.19.7                 /opt/libheif-1.19.7
+COPY --from=libheif             /usr/local/lib/libx265*              /usr/local/lib/
 
 # Library paths for dynamically linked binaries
-ENV LD_LIBRARY_PATH="/opt/jpegli-0.11.1/lib:/opt/libjpeg-turbo-3.1.0/lib:/opt/mozjpeg-4.1.5/lib64:/opt/mozjpeg-4.1.5/lib"
+ENV LD_LIBRARY_PATH="/opt/jpegli-0.11.1/lib:/opt/libjpeg-turbo-3.1.0/lib:/opt/mozjpeg-4.1.5/lib64:/opt/mozjpeg-4.1.5/lib:/opt/libwebp-1.5.0/lib:/opt/libavif-1.2.1/lib:/opt/libtiff-4.7.0/lib:/opt/libheif-1.19.7/lib:/usr/local/lib"
 
-# Encoder binary aliases — fully qualified paths avoid $PATH conflicts.
-# Scripts use these env vars, never bare "cjpeg".
+# ── JPEG encoder aliases ──
 ENV CJPEG_IJG="/opt/libjpeg-9e/bin/cjpeg" \
     DJPEG_IJG="/opt/libjpeg-9e/bin/djpeg" \
     CJPEG_TURBO="/opt/libjpeg-turbo-3.1.0/bin/cjpeg" \
@@ -222,6 +401,32 @@ ENV CJPEG_IJG="/opt/libjpeg-9e/bin/cjpeg" \
     CJPEGLI="/opt/jpegli-0.11.1/bin/cjpegli" \
     DJPEGLI="/opt/jpegli-0.11.1/bin/djpegli" \
     GUETZLI="/opt/guetzli-1.0.1/bin/guetzli"
+
+# ── WebP aliases ──
+ENV CWEBP="/opt/libwebp-1.5.0/bin/cwebp" \
+    DWEBP="/opt/libwebp-1.5.0/bin/dwebp"
+
+# ── AVIF aliases ──
+ENV AVIFENC="/opt/libavif-1.2.1/bin/avifenc" \
+    AVIFDEC="/opt/libavif-1.2.1/bin/avifdec"
+
+# ── JPEG XL aliases ──
+ENV CJXL="/opt/jpegli-0.11.1/bin/cjxl" \
+    DJXL="/opt/jpegli-0.11.1/bin/djxl"
+
+# ── PNG optimizer aliases ──
+ENV OPTIPNG="/usr/bin/optipng" \
+    PNGCRUSH="/usr/bin/pngcrush" \
+    ZOPFLIPNG="/opt/zopfli-1.0.3/bin/zopflipng"
+
+# ── GIF aliases ──
+ENV GIFSICLE="/opt/gifsicle-1.95/bin/gifsicle"
+
+# ── TIFF aliases ──
+ENV TIFFCP="/opt/libtiff-4.7.0/bin/tiffcp"
+
+# ── HEIC aliases ──
+ENV HEIF_ENC="/opt/libheif-1.19.7/bin/heif-enc"
 
 # Copy generation scripts and config
 COPY scripts/ /app/scripts/

@@ -30,7 +30,10 @@ except ImportError:
 
 
 # Encoder metadata registry
+# Collect encoder metadata from all format modules.
+# Each encode_*.py has an ENCODER_METADATA dict.
 ENCODER_METADATA = {
+    # ── JPEG ──
     "libjpeg-turbo-3.1.0": {
         "name": "libjpeg-turbo",
         "version": "3.1.0",
@@ -64,6 +67,104 @@ ENCODER_METADATA = {
         "version": "1.0.1",
         "binary": "guetzli",
         "source_url": "https://github.com/google/guetzli",
+        "compile_flags": [],
+    },
+    # ── WebP ──
+    "libwebp-cwebp-lossy": {
+        "name": "libwebp cwebp (lossy)",
+        "version": "1.5.0",
+        "binary": "cwebp",
+        "source_url": "https://github.com/webmproject/libwebp",
+        "compile_flags": [],
+    },
+    "libwebp-cwebp-lossless": {
+        "name": "libwebp cwebp (lossless)",
+        "version": "1.5.0",
+        "binary": "cwebp",
+        "source_url": "https://github.com/webmproject/libwebp",
+        "compile_flags": [],
+    },
+    # ── AVIF ──
+    "avifenc-libavif": {
+        "name": "avifenc (libavif+aom)",
+        "version": "1.2.1",
+        "binary": "avifenc",
+        "source_url": "https://github.com/AOMediaCodec/libavif",
+        "compile_flags": ["AVIF_CODEC_AOM=SYSTEM"],
+    },
+    # ── JPEG XL ──
+    "cjxl-libjxl": {
+        "name": "cjxl (libjxl)",
+        "version": "0.11.1",
+        "binary": "cjxl",
+        "source_url": "https://github.com/libjxl/libjxl",
+        "compile_flags": [],
+    },
+    # ── PNG ──
+    "imagemagick-convert": {
+        "name": "ImageMagick convert (PNG)",
+        "version": "system",
+        "binary": "convert",
+        "source_url": "https://imagemagick.org/",
+        "compile_flags": [],
+    },
+    "optipng": {
+        "name": "OptiPNG",
+        "version": "system",
+        "binary": "optipng",
+        "source_url": "https://optipng.sourceforge.net/",
+        "compile_flags": [],
+    },
+    "pngcrush": {
+        "name": "pngcrush",
+        "version": "system",
+        "binary": "pngcrush",
+        "source_url": "https://pmt.sourceforge.io/pngcrush/",
+        "compile_flags": [],
+    },
+    "zopflipng": {
+        "name": "zopflipng",
+        "version": "1.0.3",
+        "binary": "zopflipng",
+        "source_url": "https://github.com/google/zopfli",
+        "compile_flags": [],
+    },
+    # ── GIF ──
+    "gifsicle-1.95": {
+        "name": "gifsicle",
+        "version": "1.95",
+        "binary": "gifsicle",
+        "source_url": "https://github.com/kohler/gifsicle",
+        "compile_flags": [],
+    },
+    "imagemagick-gif": {
+        "name": "ImageMagick convert (GIF)",
+        "version": "system",
+        "binary": "convert",
+        "source_url": "https://imagemagick.org/",
+        "compile_flags": [],
+    },
+    # ── TIFF ──
+    "imagemagick-tiff": {
+        "name": "ImageMagick convert (TIFF)",
+        "version": "system",
+        "binary": "convert",
+        "source_url": "https://imagemagick.org/",
+        "compile_flags": [],
+    },
+    "tiffcp-libtiff": {
+        "name": "tiffcp (libtiff)",
+        "version": "4.7.0",
+        "binary": "tiffcp",
+        "source_url": "https://gitlab.com/libtiff/libtiff",
+        "compile_flags": [],
+    },
+    # ── HEIC ──
+    "heif-enc-x265": {
+        "name": "heif-enc (libheif+x265)",
+        "version": "1.19.7",
+        "binary": "heif-enc",
+        "source_url": "https://github.com/strukturag/libheif",
         "compile_flags": [],
     },
 }
@@ -115,11 +216,24 @@ def build_manifest(results_path: Path, sources_path: Path,
         else:
             b3 = ""
 
+        # Detect format from file extension
+        ext = Path(r["output_path"]).suffix.lstrip(".")
+        fmt = {
+            "jpg": "jpeg", "jpeg": "jpeg",
+            "png": "png",
+            "webp": "webp",
+            "avif": "avif",
+            "jxl": "jxl",
+            "gif": "gif",
+            "tiff": "tiff", "tif": "tiff",
+            "heic": "heic",
+        }.get(ext, ext)
+
         entry = {
             "path": r["output_path"],
             "blake3": b3,
             "bytes": r["output_bytes"],
-            "format": "jpeg",
+            "format": fmt,
             "encoder": r["encoder_id"],
             "source": r["source_name"],
             "params": r["params"],
