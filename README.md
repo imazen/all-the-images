@@ -1,162 +1,239 @@
 # all-the-images
 
-Reproducible multi-codec test corpus for the zen image codec family.
+Reproducible multi-codec test corpus generator. A Docker image compiles
+every encoder from pinned source so the same inputs always produce
+byte-identical outputs, regardless of what machine runs it.
 
-Every encoder is built from a pinned source commit inside a Docker image, so
-rebuilding on any machine produces byte-identical output. Downstream zen crates
-consume the corpus via release tarballs — no local encoder builds required.
+The primary output is a **corpus directory** containing thousands of
+encoded images across 8 formats plus a **manifest.json** that records
+the encoder, version, parameters, content hash, and reference decoder
+pixel hashes for every file. When multiple encoder versions produce
+identical output, only one copy is stored — the manifest records all
+co-producers so you can see exactly which versions agree and which diverge.
 
-## Quick start
+## Generating a corpus
 
 ```bash
-# Build the Docker image (compiles all encoders from source)
+# Build the Docker image (compiles ~20 encoders from source — takes a while the first time)
 docker compose build
 
-# Generate the full corpus (writes to ./corpus/)
+# Generate the full corpus into ./corpus/
 docker compose run --rm generate
 
-# Generate a quick subset for smoke testing
-docker compose run --rm generate-quick
+# Quick subset (~2k files, 15 seconds) for smoke testing
+docker compose run --rm quick
+
+# Only specific formats
+docker compose run --rm generate --formats jpeg,png,webp
+
+# Interactive shell with every encoder on $PATH
+docker compose run --rm shell
 ```
 
-## What's inside
-
-### JPEG encoders (v0)
-
-| Encoder | Version | Source | Notable flags |
-|---------|---------|--------|---------------|
-| libjpeg (IJG) | 9e | ijg.org | arithmetic, block sizes 1-16 |
-| libjpeg-turbo | 3.1.0 | GitHub | `WITH_ARITH_ENC/DEC`, 12-bit |
-| libjpeg-turbo (12-bit) | 3.1.0 | GitHub | Separate 12-bit precision build |
-| mozjpeg | 4.1.5 | GitHub | Trellis quant, arithmetic, progressive |
-| jpegli (cjpegli) | libjxl v0.11.1 | GitHub | XYB, adaptive quant, progressive levels |
-| guetzli | 1.0.1 | GitHub | Perceptual, butteraugli-optimized |
-
-### Planned (v1+)
-
-- **PNG**: libpng, oxipng, pngcrush, zopflipng, lodepng, zenpng
-- **WebP**: libwebp (lossy + lossless), zenwebp
-- **AVIF**: libavif+aom, libavif+rav1e, libavif+SVT-AV1, zenavif
-- **JPEG XL**: libjxl (cjxl), zenjxl
-- **GIF**: gifsicle, ImageMagick
-- **TIFF**: libtiff (LZW, Deflate, JPEG-in-TIFF, CCITT G3/G4)
-- **HEIC**: libheif+x265
-
-### Source images
-
-Synthetic test patterns generated deterministically:
-
-| Pattern | Description | Exercises |
-|---------|-------------|-----------|
-| noise | Uniform random pixels | General codec stress |
-| patches | Noise + solid-color rectangles | Block boundary handling |
-| checkerboard | High-contrast alternating blocks | DCT energy distribution |
-| edges | Horizontal/vertical gradients | Directional frequency response |
-| bands | Irregular-width stripes | Chroma subsampling boundaries |
-
-Dimensions include MCU-aligned (16, 32, 64, 128), non-aligned (17, 33, 65),
-odd asymmetric (23x29, 31x17), and minimal (7x7, 9x9). Both RGB and grayscale.
-
-### Parameter permutations (JPEG)
-
-Each source image is encoded with a matrix of parameters per encoder:
-
-- **Quality**: 10 levels (Q1 through Q100)
-- **Chroma subsampling**: 4:4:4, 4:2:2, 4:2:0, 4:4:0, 4:1:1
-- **Progressive**: on/off (+ jpegli levels 0-2)
-- **Huffman optimization**: on/off
-- **Arithmetic coding**: on/off (libjpeg v9+, turbo with flag, mozjpeg)
-- **Restart markers**: 0, 1, 8 MCU intervals
-- **DCT method**: int, fast, float
-- **Encoder-specific**: XYB colorspace, trellis quant, smoothing, baseline mode
-
-### Output structure
+After generation, `./corpus/` contains:
 
 ```
 corpus/
-├── manifest.json              # Full corpus manifest with per-file metadata
+├── manifest.json                    # everything about every file
+├── sources/                         # synthetic PPM/PGM input images
 ├── jpeg/
-│   ├── libjpeg-turbo-3.1.0/
-│   │   ├── <hash>.jpg         # Sharded by first 2 hex chars
-│   │   └── ...
-│   ├── mozjpeg-4.1.5/
-│   ├── jpegli-0.11.1/
-│   ├── libjpeg-9e/
-│   └── guetzli-1.0.1/
-└── sources/
-    ├── noise_32x32_rgb.ppm
-    └── ...
+│   ├── libjpeg-turbo-3.1.0/ab/ab3f…c2.jpg
+│   ├── libjpeg-6b/…
+│   ├── mozjpeg-4.1.5/…
+│   └── …
+├── png/
+│   ├── imagemagick-convert/…
+│   ├── optipng/…
+│   └── …
+├── webp/…
+├── avif/…
+├── jxl/…
+├── gif/…
+├── tiff/…
+└── heic/…
 ```
 
-### Manifest
+Files are sharded by content hash: `<format>/<encoder-id>/<hash[0:2]>/<hash>.<ext>`.
 
-`manifest.json` contains per-file metadata:
+## What's in the manifest
+
+Every file gets a JSON entry with full provenance:
 
 ```json
 {
-  "schema_version": "0.1.0",
-  "generated_at": "2026-04-11T12:00:00Z",
-  "docker_image_hash": "sha256:...",
-  "encoders": { ... },
-  "files": [
-    {
-      "path": "jpeg/libjpeg-turbo-3.1.0/ab/ab3f...c2.jpg",
-      "blake3": "...",
-      "bytes": 1234,
-      "format": "jpeg",
-      "encoder": "libjpeg-turbo-3.1.0",
-      "source": "noise_32x32_rgb",
-      "params": { "quality": 85, "subsampling": "4:2:0", ... },
-      "reference_decodes": {
-        "djpeg-turbo-3.1.0": "blake3-of-decoded-pixels",
-        "djpeg-mozjpeg-4.1.5": "blake3-of-decoded-pixels"
-      }
-    }
+  "path": "jpeg/libjpeg-turbo-3.1.0/ab/ab3f…c2.jpg",
+  "blake3": "ab3f…c2…64hex",
+  "bytes": 1234,
+  "format": "jpeg",
+  "encoder": "libjpeg-turbo-3.1.0",
+  "source": "noise_32x32_rgb",
+  "params": {
+    "quality": 85,
+    "subsampling": "2x2",
+    "progressive": true,
+    "optimize": true,
+    "arithmetic": false,
+    "restart": 0,
+    "dct": "int"
+  },
+  "reference_decodes": {
+    "djpeg-turbo-3.1.0": "…blake3 of decoded pixels…",
+    "djpeg-mozjpeg-4.1.5": "…",
+    "djpegli-0.11.1": "…"
+  },
+  "also_produced_by": [
+    { "encoder": "libjpeg-turbo-2.1.5", "source": "noise_32x32_rgb", "params": { … } },
+    { "encoder": "libjpeg-turbo-2.1.2", "source": "noise_32x32_rgb", "params": { … } }
   ]
 }
 ```
 
-## Consumption
+The `also_produced_by` field lists every other encoder+params combination that
+produced byte-identical output. This is the primary tool for answering "which
+encoder versions are interchangeable and which aren't."
 
-Downstream zen crates pull the corpus via the `codec-corpus` crate, which
-fetches release tarballs from GitHub. A `corpus-tests` feature flag gates
-expensive tests so they're opt-in:
+Top-level `manifest.json` also contains:
+- `encoders` — metadata for every encoder (name, version, source URL, compile flags, Ubuntu version it shipped with)
+- `sources` — metadata for every source image (dimensions, channels, pattern type)
+- `decoders` — metadata for reference decoders used for pixel hashing
+- `stats` — totals, unique count, failure count, co-production count
+
+## Encoders
+
+### JPEG (12 encoder versions)
+
+| Encoder | Versions | Why these versions |
+|---------|----------|-------------------|
+| libjpeg-turbo | 1.3.0, 2.0.3, 2.1.2, 2.1.5, 3.1.0 | Every Ubuntu LTS since 14.04 shipped a different turbo |
+| libjpeg-turbo (12-bit) | 3.1.0 | Separate 12-bit precision build |
+| IJG libjpeg | 6b, 9b, 9d, 10 | 6b is the 1998 baseline still deployed everywhere; 9b-9d match Ubuntu 16.04-22.04; 10 is the latest (2026-01-25) |
+| mozjpeg | 4.1.5 | Trellis quantization, progressive scan optimization |
+| jpegli | 0.11.1 (libjxl) | XYB colorspace, adaptive quantization |
+| guetzli | 1.0.1 | Butteraugli-optimized perceptual encoder |
+
+All libjpeg-turbo builds enable `WITH_ARITH_ENC` and `WITH_ARITH_DEC` (distro
+packages disable these). IJG v6b has no arithmetic coding or block size support;
+v9+ adds both plus RGB identity encoding.
+
+### PNG (4 encoders)
+
+| Encoder | Source |
+|---------|--------|
+| ImageMagick convert | system (apt) — baseline PNG creation with depth/color/interlace/zlib-level axes |
+| OptiPNG | system (apt) — optimization levels 0-7, interlace, strip |
+| pngcrush | system (apt) — brute-force, method/filter matrix |
+| zopflipng | 1.0.3 (from source) — iterations, filter strategies, lossy modes |
+
+### WebP, AVIF, JXL, GIF, TIFF, HEIC
+
+| Format | Encoder | Version |
+|--------|---------|---------|
+| WebP | cwebp (libwebp) | 1.5.0 — lossy + lossless parameter matrices |
+| AVIF | avifenc (libavif + aom) | 1.2.1 — quality, speed, YUV, bit depth, lossless |
+| JXL | cjxl (libjxl) | 0.11.1 — VarDCT + modular modes, distance/effort/progressive |
+| GIF | gifsicle | 1.94 — optimization, colors, lossy, dither |
+| GIF | ImageMagick | system — dither, ordered-dither, palette sizes |
+| TIFF | ImageMagick | system — LZW, Zip, JPEG, Fax, Group4, PackBits, LZMA |
+| TIFF | tiffcp (libtiff) | 4.7.0 — strip/tile layouts, recompression |
+| HEIC | heif-enc (libheif + x265) | 1.19.7 — quality, lossless, bit depth |
+
+## Source images
+
+Deterministic synthetic patterns — no external dependencies, no licensing concerns:
+
+| Pattern | Description | What it exercises |
+|---------|-------------|-------------------|
+| noise | Uniform random pixels (fixed LCG seed) | General codec stress, entropy coding |
+| patches | Noise + solid-color rectangles | Block boundary handling, DC prediction |
+| checkerboard | High-contrast alternating blocks | DCT energy distribution |
+| edges | Horizontal/vertical gradients | Directional frequency response |
+| bands | Irregular-width stripes | Chroma subsampling boundaries |
+
+Dimensions cover MCU-aligned (16, 32, 64, 128), non-aligned (17, 33, 65),
+odd asymmetric (23×29, 31×17, 47×63), and minimal (7×7, 9×9).
+Both RGB and grayscale variants.
+
+## Using the corpus in tests
+
+Download a release tarball and validate your decoder against the reference
+pixel hashes — no FFI or encoder builds needed:
 
 ```rust
-#[cfg(feature = "corpus-tests")]
-#[test]
-fn decode_all_corpus_jpegs() {
-    let corpus = all_the_images::jpeg_corpus().unwrap();
-    for entry in corpus.files() {
-        let decoded = my_decoder.decode(&entry.bytes);
-        // Compare pixel hash against reference
-        assert_eq!(
-            blake3::hash(&decoded.pixels),
-            entry.reference_decodes["djpeg-turbo-3.1.0"]
-        );
+use std::collections::HashMap;
+
+/// For each JPEG in the corpus, decode it and check the pixel hash
+/// matches what the reference decoder (djpeg from libjpeg-turbo) produced.
+fn validate_decoder(corpus_dir: &Path) {
+    let manifest: Manifest = serde_json::from_reader(
+        File::open(corpus_dir.join("manifest.json")).unwrap()
+    ).unwrap();
+
+    for file in &manifest.files {
+        if file.format != "jpeg" { continue; }
+
+        let data = std::fs::read(corpus_dir.join(&file.path)).unwrap();
+        let pixels = my_decoder::decode(&data).unwrap();
+        let hash = blake3::hash(&pixels);
+
+        // Compare against reference decoder output
+        if let Some(expected) = file.reference_decodes.get("djpeg-turbo-3.1.0") {
+            assert_eq!(
+                hash.to_hex().to_string(), *expected,
+                "Pixel mismatch: {} (encoder: {}, params: {:?})",
+                file.path, file.encoder, file.params,
+            );
+        }
     }
 }
 ```
 
+The `also_produced_by` field answers version-compatibility questions:
+
+```python
+import json
+
+manifest = json.load(open("corpus/manifest.json"))
+for f in manifest["files"]:
+    if f["format"] != "jpeg":
+        continue
+    coprod = f.get("also_produced_by", [])
+    if coprod:
+        versions = [f["encoder"]] + [c["encoder"] for c in coprod]
+        print(f"{f['source']} q={f['params'].get('quality')}: "
+              f"{', '.join(versions)} produce identical output")
+```
+
+## Deduplication
+
+When multiple encoder versions produce byte-identical output for the same
+source and parameters, only one file is stored. The manifest's
+`also_produced_by` records every co-producer. This keeps the corpus small
+while preserving the version-compatibility data that's the whole point of
+running multiple versions.
+
+Quick-mode example: 2,030 JPEG encoding tasks across 12 encoder versions
+→ 1,718 succeeded → **701 unique files** on disk (285 with co-producers,
+1,017 co-productions).
+
 ## Docker image
 
-Published to `ghcr.io/imazen/all-the-images`. CI in any zen repo can pull and
-re-run generation on demand:
+The image is published to GHCR on each release. CI in any repo can pull
+it to regenerate or extend the corpus:
 
 ```bash
-docker pull ghcr.io/imazen/all-the-images:0.1.0
-docker run --rm -v ./corpus:/output ghcr.io/imazen/all-the-images:0.1.0
+docker pull ghcr.io/imazen/all-the-images:latest
+docker run --rm -v ./corpus:/output ghcr.io/imazen/all-the-images:latest --output /output
+docker run --rm -v ./corpus:/output ghcr.io/imazen/all-the-images:latest --output /output --quick
+docker run --rm -v ./corpus:/output ghcr.io/imazen/all-the-images:latest --output /output --formats jpeg,png
 ```
 
 ## Versioning
 
-The corpus is a versioned release artifact. Consumers pin to a version.
-Bumping the version means re-generating the entire corpus — output is
-immutable per version.
+The corpus is a versioned release artifact with an immutable manifest schema.
+Consumers pin to a version. Bumping the version regenerates the entire corpus.
 
 ## License
 
-Source images are synthetic (generated) or CC0. Encoder source code retains
-its original license (IJG, BSD, Apache-2.0, etc.) within the Docker build
-stages. The corpus output (encoded images) and scripts in this repo are
-MIT-licensed.
+Scripts and generated source images are MIT-licensed. Encoder source code
+retains its original license within the Docker build stages (IJG, BSD,
+Apache-2.0, etc.). The encoded corpus output is unencumbered.
