@@ -207,7 +207,7 @@ COPY --from=jpegli           /opt/jpegli-0.11.1                  /opt/jpegli-0.1
 COPY --from=guetzli          /opt/guetzli-1.0.1                  /opt/guetzli-1.0.1
 
 # Library paths for dynamically linked binaries
-ENV LD_LIBRARY_PATH="/opt/jpegli-0.11.1/lib:/opt/libjpeg-turbo-3.1.0/lib:/opt/mozjpeg-4.1.5/lib64:/opt/mozjpeg-4.1.5/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/opt/jpegli-0.11.1/lib:/opt/libjpeg-turbo-3.1.0/lib:/opt/mozjpeg-4.1.5/lib64:/opt/mozjpeg-4.1.5/lib"
 
 # Encoder binary aliases — fully qualified paths avoid $PATH conflicts.
 # Scripts use these env vars, never bare "cjpeg".

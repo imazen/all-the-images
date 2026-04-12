@@ -38,6 +38,8 @@ class EncoderTask:
     params: dict
     cmd: list[str]
     output_path: str = ""  # filled by runner
+    env_override: dict = field(default_factory=dict)  # per-encoder LD_LIBRARY_PATH
+    needs_png_input: bool = False  # guetzli needs PNG, not PPM
 
 
 @dataclass
@@ -75,6 +77,7 @@ def build_cjpeg_turbo_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
     encoder_id = "libjpeg-turbo-3.1.0"
     tasks = []
+    turbo_env = {"LD_LIBRARY_PATH": "/opt/libjpeg-turbo-3.1.0/lib"}
 
     qualities = [1, 5, 15, 35, 55, 75, 85, 92, 97, 100] if not quick else [15, 75, 97]
     subsampling_rgb = ["1x1", "2x1", "1x2", "2x2", "4x1"] if not quick else ["1x1", "2x2"]
@@ -139,6 +142,7 @@ def build_cjpeg_turbo_tasks(source: dict, quick: bool) -> list[EncoderTask]:
                                     source_channels=source["channels"],
                                     params=params,
                                     cmd=cmd,
+                                    env_override=turbo_env,
                                 ))
     return tasks
 
@@ -155,6 +159,7 @@ def build_cjpeg_ijg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
     encoder_id = "libjpeg-9e"
     tasks = []
+    ijg_env = {"LD_LIBRARY_PATH": "/opt/libjpeg-9e/lib"}
     is_gray = source["channels"] == 1
 
     qualities = [10, 50, 85, 97] if not quick else [50, 85]
@@ -194,6 +199,7 @@ def build_cjpeg_ijg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
                         source_channels=source["channels"],
                         params=params,
                         cmd=cmd,
+                        env_override=ijg_env,
                     ))
     return tasks
 
@@ -211,6 +217,10 @@ def build_mozjpeg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     encoder_id = "mozjpeg-4.1.5"
     tasks = []
     is_gray = source["channels"] == 1
+
+    # mozjpeg needs its own library path to avoid symbol conflicts with
+    # libjpeg-turbo or IJG libjpeg (jpeg_c_set_int_param is IJG-only)
+    moz_env = {"LD_LIBRARY_PATH": "/opt/mozjpeg-4.1.5/lib64:/opt/mozjpeg-4.1.5/lib"}
 
     qualities = [5, 30, 55, 75, 85, 92, 97] if not quick else [55, 85]
     subsampling_rgb = ["1x1", "2x2"] if not quick else ["2x2"]
@@ -254,6 +264,7 @@ def build_mozjpeg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
                         source_channels=source["channels"],
                         params=params,
                         cmd=actual_cmd,
+                        env_override=moz_env,
                     ))
     return tasks
 
@@ -364,7 +375,7 @@ def build_guetzli_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     for q in qualities:
         cmd = [binary]
         cmd += ["--quality", str(q)]
-        cmd += [source["path"]]
+        cmd += ["{input}"]  # guetzli needs PNG, not PPM
         cmd += ["{output}"]
 
         params = {"quality": q}
@@ -377,6 +388,7 @@ def build_guetzli_tasks(source: dict, quick: bool) -> list[EncoderTask]:
             source_channels=source["channels"],
             params=params,
             cmd=cmd,
+            needs_png_input=True,
         ))
 
     return tasks
@@ -389,15 +401,46 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
     # Create temp file for output
     fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
     os.close(fd)
+    tmp_png = None
 
     try:
-        # Substitute {output} placeholder in command
-        cmd = [tmp_path if arg == "{output}" else arg for arg in task.cmd]
+        # Convert PPM/PGM to PNG for encoders that need it (guetzli)
+        input_path = task.source_path
+        if task.needs_png_input and task.source_path.endswith((".ppm", ".pgm")):
+            tmp_png = tmp_path + ".png"
+            conv = subprocess.run(
+                ["convert", task.source_path, tmp_png],
+                capture_output=True, timeout=30,
+            )
+            if conv.returncode != 0:
+                return EncoderResult(
+                    encoder_id=task.encoder_id,
+                    source_name=task.source_name,
+                    params=task.params,
+                    success=False,
+                    error=f"PNG conversion failed: {conv.stderr.decode()[:200]}",
+                )
+            input_path = tmp_png
+
+        # Substitute {output} and {input} placeholders in command
+        cmd = []
+        for arg in task.cmd:
+            if arg == "{output}":
+                cmd.append(tmp_path)
+            elif arg == "{input}":
+                cmd.append(input_path)
+            else:
+                cmd.append(arg)
+
+        # Use per-encoder environment to avoid library symbol conflicts
+        env = dict(os.environ)
+        env.update(task.env_override)
 
         result = subprocess.run(
             cmd,
             capture_output=True,
             timeout=300,  # 5 min timeout (guetzli is slow)
+            env=env,
         )
 
         if result.returncode != 0:
@@ -473,10 +516,12 @@ def run_task(task: EncoderTask, output_dir: Path) -> EncoderResult:
             error=str(e)[:500],
         )
     finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        for p in [tmp_path, tmp_png]:
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
 
 # ── Orchestration ──────────────────────────────────────────────────────────
