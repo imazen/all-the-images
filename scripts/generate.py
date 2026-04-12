@@ -75,6 +75,14 @@ def main():
                         help="Skip reference decode hash computation")
     parser.add_argument("--formats", type=str, default="all",
                         help="Comma-separated format list (jpeg,png,webp,avif,jxl,gif,tiff) or 'all'")
+    parser.add_argument("--dimensions", type=str, default="",
+                        help="Extra dimensions: '320x240,1920x1080,512'")
+    parser.add_argument("--sources-dir", type=Path, default=None,
+                        help="Directory of user-provided images (PNG/PPM/PFM) to re-encode")
+    parser.add_argument("--no-16bit", action="store_true",
+                        help="Skip 16-bit source generation")
+    parser.add_argument("--no-hdr", action="store_true",
+                        help="Skip HDR float source generation")
     args = parser.parse_args()
 
     output = args.output
@@ -98,7 +106,15 @@ def main():
 
     # ── Step 1: Generate source images ──────────────────────────────────
     print("─── Step 1: Generating source images ───")
-    sources = generate_sources.generate_all(sources_dir, quick=args.quick)
+    extra_dims = (generate_sources.parse_dimensions(args.dimensions)
+                  if args.dimensions else None)
+    sources = generate_sources.generate_all(
+        sources_dir, quick=args.quick,
+        extra_dims=extra_dims,
+        user_sources_dir=args.sources_dir,
+        enable_16bit=not args.no_16bit,
+        enable_hdr=not args.no_hdr,
+    )
     sources_json = sources_dir / "sources.json"
     with open(sources_json, "w") as f:
         json.dump(sources, f, indent=2)

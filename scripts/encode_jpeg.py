@@ -73,6 +73,9 @@ def _build_cjpeg_turbo_version_tasks(source: dict, quick: bool,
                                       env_name: str, encoder_id: str,
                                       lib_path: str) -> list[EncoderTask]:
     """libjpeg-turbo cjpeg parameter permutations for a single version."""
+    # JPEG is 8-bit only — skip 16-bit and HDR sources
+    if source.get("bit_depth", 8) > 8:
+        return []
     binary = env_bin(env_name)
     if not binary:
         return []
@@ -194,6 +197,8 @@ def _build_cjpeg_ijg_version_tasks(source: dict, quick: bool,
     v6b: no arithmetic, no block sizes, no progressive in cjpeg
     v9+: arithmetic coding, block sizes 1-16, RGB identity encoding
     """
+    if source.get("bit_depth", 8) > 8:
+        return []
     binary = env_bin(env_name)
     if not binary:
         return []
@@ -270,11 +275,9 @@ def build_cjpeg_ijg10_tasks(source: dict, quick: bool) -> list[EncoderTask]:
 
 
 def build_mozjpeg_tasks(source: dict, quick: bool) -> list[EncoderTask]:
-    """mozjpeg parameter permutations.
-
-    mozjpeg's default mode already does trellis quantization and progressive
-    scan optimization. We exercise its specific features.
-    """
+    """mozjpeg parameter permutations."""
+    if source.get("bit_depth", 8) > 8:
+        return []
     binary = env_bin("CJPEG_MOZ")
     if not binary:
         return []
@@ -419,6 +422,8 @@ def build_guetzli_tasks(source: dict, quick: bool) -> list[EncoderTask]:
     Guetzli is VERY slow (minutes per image). Only used on small sources
     with limited quality levels. Minimum quality is 84.
     """
+    if source.get("bit_depth", 8) > 8:
+        return []
     binary = env_bin("GUETZLI")
     if not binary:
         return []

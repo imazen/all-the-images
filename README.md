@@ -30,6 +30,66 @@ docker compose run --rm generate --formats jpeg,png,webp
 docker compose run --rm shell
 ```
 
+### Re-encoding your own images
+
+Drop PNG, PPM, PFM, TIFF, or EXR files into a directory and point `--sources-dir`
+at it. Every file gets encoded through the full parameter matrix of every encoder:
+
+```bash
+# Re-encode a directory of PNGs through all encoders
+docker compose run --rm generate --sources-dir /input
+
+# Mount your image directory into the container
+SOURCES_DIR=/path/to/my/images docker compose run --rm generate --sources-dir /input
+
+# Direct docker run (no compose)
+docker run --rm \
+  -v ./corpus:/output \
+  -v /path/to/my/images:/input:ro \
+  all-the-images:latest --output /output --sources-dir /input
+```
+
+Image metadata (dimensions, bit depth, channels) is detected automatically via
+ImageMagick `identify`. Supported formats: PNG, PPM, PGM, PFM, TIFF, EXR, JPEG, BMP.
+
+### Custom dimensions
+
+Add arbitrary dimensions beyond the built-in set. Useful for testing specific
+resolution targets or non-standard aspect ratios:
+
+```bash
+# Add 1080p, 4K, and a square 512
+docker compose run --rm generate --dimensions 1920x1080,3840x2160,512
+
+# Combine with user sources and format selection
+docker compose run --rm generate \
+  --sources-dir /input \
+  --dimensions 320x240,640x480 \
+  --formats jpeg,avif,jxl
+```
+
+Dimensions are specified as `WxH` (e.g., `1920x1080`) or just `N` for square (e.g., `512` = `512x512`). Comma-separated, merged with the built-in set.
+
+### Bit depths and HDR
+
+Full-mode generation (not `--quick`) automatically includes:
+
+| Bit depth | Format | Source type | Encoders that use it |
+|-----------|--------|-------------|---------------------|
+| 8-bit | PPM/PGM | sRGB synthetic + user images | All encoders |
+| 16-bit | PNG | sRGB, Display P3 | PNG, AVIF, JXL, TIFF |
+| 32-bit float | PFM | Linear, PQ (HDR highlights up to 10.0) | JXL, jpegli, TIFF |
+
+Encoders automatically skip sources they can't handle — JPEG encoders (except
+jpegli) skip 16-bit and HDR sources, WebP and GIF skip anything above 8-bit.
+No manual configuration needed.
+
+To disable higher bit depths (faster generation):
+
+```bash
+docker compose run --rm generate --no-16bit --no-hdr
+```
+
 After generation, `./corpus/` contains:
 
 ```
@@ -139,7 +199,9 @@ v9+ adds both plus RGB identity encoding.
 
 ## Source images
 
-Deterministic synthetic patterns — no external dependencies, no licensing concerns:
+### Synthetic patterns
+
+Deterministic test patterns — no external dependencies, no licensing concerns:
 
 | Pattern | Description | What it exercises |
 |---------|-------------|-------------------|
@@ -149,9 +211,26 @@ Deterministic synthetic patterns — no external dependencies, no licensing conc
 | edges | Horizontal/vertical gradients | Directional frequency response |
 | bands | Irregular-width stripes | Chroma subsampling boundaries |
 
-Dimensions cover MCU-aligned (16, 32, 64, 128), non-aligned (17, 33, 65),
-odd asymmetric (23×29, 31×17, 47×63), and minimal (7×7, 9×9).
-Both RGB and grayscale variants.
+Generated at three precision levels:
+- **8-bit** (PPM/PGM) — all patterns, all dimensions, RGB + grayscale
+- **16-bit** (PNG) — noise + checkerboard subset, sRGB + Display P3
+- **32-bit float** (PFM) — noise + checkerboard, linear sRGB + PQ/HDR
+  (highlights up to 10.0 nits for HDR encoder testing)
+
+Built-in dimensions cover MCU-aligned (16, 32, 64, 128), non-aligned (17, 33, 65),
+odd asymmetric (23×29, 31×17, 47×63), and minimal (7×7, 9×9). Extend with `--dimensions`.
+
+### User-provided images
+
+Any PNG, PPM, PGM, PFM, TIFF, EXR, JPEG, or BMP file in `--sources-dir` is
+included alongside synthetics. Metadata (dimensions, bit depth, channels) is
+detected via ImageMagick `identify`. Each user image gets encoded through the
+full parameter matrix of every compatible encoder.
+
+### Derived variants
+
+CMYK (TIFF, via ImageMagick) and wide-gamut (Display P3, 16-bit PNG) sources
+are derived automatically from the base synthetic images.
 
 ## Using the corpus in tests
 
