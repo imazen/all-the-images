@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Verify the source generator and encoding pipeline work without Docker
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system encoders
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-turbo-progs
+
+      - name: Install Python dependencies
+        run: pip install blake3==1.0.4
+
+      - name: Generate sources (quick)
+        run: python3 scripts/generate_sources.py --output /tmp/sources --quick
+
+      - name: Encode (quick, turbo only)
+        env:
+          CJPEG_TURBO: /usr/bin/cjpeg
+          DJPEG_TURBO: /usr/bin/djpeg
+        run: |
+          python3 scripts/encode_jpeg.py \
+            --sources /tmp/sources/sources.json \
+            --output /tmp/corpus \
+            --quick --workers 2
+
+      - name: Build manifest
+        run: |
+          python3 scripts/build_manifest.py \
+            --results /tmp/corpus/encoding_results.json \
+            --sources /tmp/sources/sources.json \
+            --corpus /tmp/corpus \
+            --output /tmp/corpus/manifest.json
+
+      - name: Compute reference hashes
+        env:
+          DJPEG_TURBO: /usr/bin/djpeg
+        run: |
+          python3 scripts/compute_reference.py \
+            --manifest /tmp/corpus/manifest.json \
+            --corpus /tmp/corpus
+
+      - name: Validate manifest JSON
+        run: python3 -c "import json; m=json.load(open('/tmp/corpus/manifest.json')); print(f'Files: {len(m[\"files\"])}, Version: {m[\"schema_version\"]}')"
+
+  # Build the Docker image (but don't push on PR)
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: all-the-images:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Validate the schema file
+  schema-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON schema
+        run: python3 -c "import json; json.load(open('manifest/schema.json')); print('Schema valid')"
