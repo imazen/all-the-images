@@ -8,28 +8,11 @@ publish = false
 blake3 = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+enough = { version = "0.4", features = ["std"] }
 
-# Zen decoders — each behind a feature flag so you can test subsets
-zenjpeg = { path = "../../zenjpeg/zenjpeg", features = ["decoder"], optional = true }
-zenpng = { path = "../../zenpng", optional = true }
-zenwebp = { path = "../../zenwebp", optional = true }
-zengif = { path = "../../zengif", optional = true }
-zenjxl-decoder = { path = "../../zenjxl-decoder/zenjxl-decoder", optional = true }
-heic = { path = "../../heic", optional = true }
-zenavif = { path = "../../zenavif", optional = true }
-tiff = { path = "../../image-tiff", optional = true }
+# Zen decoders (direct deps — zencodecs has version-pin issues)
+zenjpeg = { path = "../../zenjpeg/zenjpeg", features = ["decoder"] }
 
-# enough crate provides the Stop trait used by zen decoders
-enough = { version = "0.4", features = ["std"], optional = true }
-
-[features]
-default = ["jpeg"]
-jpeg = ["dep:zenjpeg", "dep:enough"]
-png = ["dep:zenpng", "dep:enough"]
-webp = ["dep:zenwebp"]
-gif = ["dep:zengif", "dep:enough"]
-jxl = ["dep:zenjxl-decoder"]
-avif = ["dep:zenavif"]
-heic-decode = ["dep:heic"]
-tiff-decode = ["dep:tiff"]
-all = ["jpeg", "png", "webp", "gif", "jxl", "avif", "heic-decode", "tiff-decode"]
+# Visual regression
+zensim = { path = "../../zensim/zensim" }
+zensim-regress = { path = "../../zensim/zensim-regress" }
