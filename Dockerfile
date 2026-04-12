@@ -242,6 +242,7 @@ RUN git clone --depth 1 --branch v${LIBAVIF_VERSION} \
         -DCMAKE_INSTALL_PREFIX=/opt/libavif-${LIBAVIF_VERSION} \
         -DCMAKE_BUILD_TYPE=Release \
         -DAVIF_CODEC_AOM=SYSTEM \
+        -DAVIF_LIBYUV=OFF \
         -DAVIF_BUILD_APPS=ON \
         -DCMAKE_PREFIX_PATH=/opt/aom-${AOM_VERSION} \
     && cmake --build build -j"$(nproc)" \
@@ -270,7 +271,7 @@ RUN git clone --depth 1 --branch zopfli-${ZOPFLI_VERSION} \
 # ============================================================================
 FROM base AS gifsicle
 
-ARG GIFSICLE_VERSION=1.95
+ARG GIFSICLE_VERSION=1.94
 RUN git clone --depth 1 --branch v${GIFSICLE_VERSION} \
         https://github.com/kohler/gifsicle.git /tmp/gifsicle \
     && cd /tmp/gifsicle \
@@ -377,7 +378,7 @@ COPY --from=zopfli              /opt/zopfli-1.0.3                   /opt/zopfli-
 # optipng and pngcrush are installed from apt above
 
 # ── GIF ──
-COPY --from=gifsicle            /opt/gifsicle-1.95                  /opt/gifsicle-1.95
+COPY --from=gifsicle            /opt/gifsicle-1.94                  /opt/gifsicle-1.94
 
 # ── TIFF ──
 COPY --from=libtiff             /opt/libtiff-4.7.0                  /opt/libtiff-4.7.0
@@ -420,7 +421,7 @@ ENV OPTIPNG="/usr/bin/optipng" \
     ZOPFLIPNG="/opt/zopfli-1.0.3/bin/zopflipng"
 
 # ── GIF aliases ──
-ENV GIFSICLE="/opt/gifsicle-1.95/bin/gifsicle"
+ENV GIFSICLE="/opt/gifsicle-1.94/bin/gifsicle"
 
 # ── TIFF aliases ──
 ENV TIFFCP="/opt/libtiff-4.7.0/bin/tiffcp"
