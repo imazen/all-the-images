@@ -84,13 +84,40 @@ fn decode_jpeg(data: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
     Ok((pixels.to_vec(), w, h))
 }
 
+fn decode_png(data: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
+    let config = zenpng::PngDecodeConfig::default();
+    let output = zenpng::decode(data, &config, &enough::Unstoppable)
+        .map_err(|e| format!("zenpng: {e}"))?;
+    let w = output.info.width;
+    let h = output.info.height;
+    let bytes = output.pixels.into_vec();
+    Ok((bytes, w, h))
+}
+
+fn decode_gif(data: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
+    let limits = zengif::Limits::default();
+    let (metadata, frames, _stats) =
+        zengif::decode_gif(data, limits, &enough::Unstoppable)
+            .map_err(|e| format!("zengif: {e}"))?;
+    let frame = frames.first().ok_or("zengif: no frames")?;
+    let w = metadata.width as u32;
+    let h = metadata.height as u32;
+    // ComposedFrame has RGBA pixels — convert to RGB for comparison
+    let rgba = &frame.pixels;
+    let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+    for pixel in rgba {
+        rgb.push(pixel.r);
+        rgb.push(pixel.g);
+        rgb.push(pixel.b);
+    }
+    Ok((rgb, w, h))
+}
+
 fn decode_format(format: &str, data: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
     match format {
         "jpeg" => decode_jpeg(data),
-        // Add more formats as their deps are verified:
-        // "png" => decode_png(data),
-        // "webp" => decode_webp(data),
-        // "gif" => decode_gif(data),
+        "png" => decode_png(data),
+        "gif" => decode_gif(data),
         _ => Err(format!("no zen decoder for '{format}' yet")),
     }
 }

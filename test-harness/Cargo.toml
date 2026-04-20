@@ -10,13 +10,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 enough = { version = "0.4", features = ["std"] }
 
-# Zen decoders — direct path deps for crates that compile against local state
-zenjpeg = { path = "../../zenjpeg/zenjpeg", features = ["decoder"] }
+# Zen decoders (direct deps — zencodecs has version-pin issues)
+zenjpeg = { path = "../../zen/zenjpeg/zenjpeg", features = ["decoder", "__test-utils"] }
+zenpng = { path = "../../zen/zenpng" }
+zengif = { path = "../../zen/zengif" }
+rgb = "0.8"
 
-# For PNG/WebP/GIF: zencodec/zenpixels 0.1→0.2 migration is incomplete
-# across the zen workspace. Once zencodec + zencodecs are updated, switch
-# to zencodecs for all-format dispatch. For now, test JPEG first.
+# Reference decoder
+mozjpeg-sys = { version = "2", features = ["with_simd", "nasm_simd"] }
 
 # Visual regression
-zensim = { path = "../../zensim/zensim" }
-zensim-regress = { path = "../../zensim/zensim-regress" }
+zensim = { path = "../../zen/zensim/zensim" }
+zensim-regress = { path = "../../zen/zensim/zensim-regress" }

@@ -25,3 +25,6 @@ Thumbs.db
 # Temp
 /tmp/
 *.log
+
+# Agent coordination marker
+.workongoing
