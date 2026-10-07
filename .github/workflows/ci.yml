@@ -51,7 +51,8 @@ jobs:
             --corpus /tmp/corpus
 
       - name: Validate manifest JSON
-        run: python3 -c "import json; m=json.load(open('/tmp/corpus/manifest.json')); print(f'Files: {len(m[\"files\"])}, Version: {m[\"schema_version\"]}')"
+        run: |
+          python3 -c "import json; m=json.load(open('/tmp/corpus/manifest.json')); print(f'Files: {len(m[\"files\"])}, Version: {m[\"schema_version\"]}')"
 
   # Build the Docker image (but don't push on PR)
   docker-build:
