@@ -416,7 +416,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # blake3 for content hashing
-RUN pip3 install --no-cache-dir --break-system-packages blake3==1.0.4
+RUN pip3 install --no-cache-dir --break-system-packages blake3==1.0.10
 
 # ── IJG libjpeg versions ──
 COPY --from=libjpeg-classic     /opt/libjpeg-6b                    /opt/libjpeg-6b
