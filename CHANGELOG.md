@@ -11,5 +11,6 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- CI: `ci.yml` parses again (a plain scalar containing `: ` made GitHub reject the file, so no job ran since it was added) (01ab8da).
 - Python `blake3` 1.0.4 -> 1.0.10 in CI and the image; corpus digests are unchanged (6d73288).
 - CI: checkout v7, docker setup-buildx v4, build-push v7, login v4, metadata v6, action-gh-release v3 (a583611).
